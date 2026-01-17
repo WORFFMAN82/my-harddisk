@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 void main() => runApp(const AnyPriceApp());
 
@@ -35,25 +36,35 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   bool isVatIncluded = false;
   bool isRoundTo100 = false;
 
-  // 테마 컬러 옵션
-  Color themeColor = const Color(0xFFFF9800);
-  final List<Map<String, dynamic>> colorOptions = [
-    {'name': '오렌지', 'color': const Color(0xFFFF9800)},
-    {'name': '블루', 'color': const Color(0xFF2196F3)}, // 파란색
-    {'name': '그린', 'color': const Color(0xFF4CAF50)}, // 초록색
-    {'name': '레드', 'color': const Color(0xFFF44336)}, // 빨간색
-    {'name': '다크', 'color': const Color(0xFF607D8B)}, // 다크
+  // 테마 옵션 한 군데로 정리
+  final List<Map<String, dynamic>> themeOptions = const [
+    {'name': '오렌지', 'color': Color(0xFFFF9800)},
+    {'name': '블루', 'color': Color(0xFF2196F3)},
+    {'name': '그린', 'color': Color(0xFF4CAF50)},
+    {'name': '레드', 'color': Color(0xFFF44336)},
+    {'name': '다크', 'color': Color(0xFF607D8B)},
   ];
 
-  // 안전용 실제 사용 컬러 목록
-  final List<Color> safeColors = [
-    const Color(0xFFFF9800),
-    const Color(0xFF2196F3),
-    const Color(0xFF4CAF50),
-    const Color(0xFFF44336),
-    const Color(0xFF607D8B),
-  ];
-  final List<String> colorNames = ['오렌지', '블루', '그린', '레드', '다크'];
+  Color themeColor = const Color(0xFFFF9800);
+
+  // 숫자 입력 포맷터
+  final TextInputFormatter intFormatter =
+      FilteringTextInputFormatter.digitsOnly;
+  final TextInputFormatter decimalFormatter = FilteringTextInputFormatter.allow(
+    RegExp(r'[0-9.]'),
+  );
+
+  @override
+  void dispose() {
+    proposalController.dispose();
+    headMarginRateController.dispose();
+    storeMarginRateController.dispose();
+    supplyPriceController.dispose();
+    sellingPriceController.dispose();
+    shippingController.dispose();
+    boxQtyController.dispose();
+    super.dispose();
+  }
 
   void calculate({String? trigger}) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
@@ -64,22 +75,25 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double selling = double.tryParse(sellingPriceController.text) ?? 0;
     double shipTotal = double.tryParse(shippingController.text) ?? 0;
     double qty = double.tryParse(boxQtyController.text) ?? 1;
+    if (qty <= 0) qty = 1;
     double shipPerItem = shipTotal / qty;
 
     setState(() {
-      // 핵심 로직: 택배비 입력 시 판매가 고정, 이익률 차감
       if (trigger == "supply") {
+        // 3. 지점공급가 직접 입력 → 본사 마진율 계산
         if (supply > 0) {
           headMarginRateController.text = ((supply - cost) / supply * 100)
               .toStringAsFixed(1);
         }
       } else if (trigger == "selling") {
+        // 5. 최종 판매가 직접 입력 → 매장 이익률 계산
         if (selling > 0) {
           double profit = selling - supply - shipPerItem;
           storeMarginRateController.text = (profit / selling * 100)
               .toStringAsFixed(1);
         }
       } else if (trigger == "headRate") {
+        // 2. 본사 마진율 입력 → 지점공급가 계산
         if (headRate < 100) {
           supply = cost / (1 - headRate / 100);
           if (isRoundTo100) {
@@ -88,6 +102,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           supplyPriceController.text = supply.toStringAsFixed(0);
         }
       } else if (trigger == "storeRate") {
+        // 4. 매장 이익률 입력 → 최종 판매가 계산
         if (storeRate < 100) {
           selling = (supply + shipPerItem) / (1 - storeRate / 100);
           if (isRoundTo100) {
@@ -96,7 +111,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           sellingPriceController.text = selling.toStringAsFixed(0);
         }
       } else {
-        // 택배비나 입수량 변경 시: 고정된 판매가에서 이익률만 다시 계산
+        // 택배비 / 입수량 변경 시: 판매가 고정, 이익률만 재계산
         if (selling > 0) {
           double profit = selling - supply - shipPerItem;
           storeMarginRateController.text = (profit / selling * 100)
@@ -112,6 +127,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double f = double.tryParse(sellingPriceController.text) ?? 0;
     double shipTotal = double.tryParse(shippingController.text) ?? 0;
     double qty = double.tryParse(boxQtyController.text) ?? 1;
+    if (qty <= 0) qty = 1;
     double shipPerItem = shipTotal / qty;
 
     double finalProfit = f - s - shipPerItem;
@@ -141,9 +157,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: Row(
-                children: List.generate(safeColors.length, (index) {
+                children: List.generate(themeOptions.length, (index) {
+                  final opt = themeOptions[index];
+                  final Color c = opt['color'] as Color;
+                  final String name = opt['name'] as String;
+
                   return GestureDetector(
-                    onTap: () => setState(() => themeColor = safeColors[index]),
+                    onTap: () => setState(() => themeColor = c),
                     child: Container(
                       margin: const EdgeInsets.only(right: 10),
                       padding: const EdgeInsets.symmetric(
@@ -151,19 +171,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color:
-                            themeColor == safeColors[index]
-                                ? themeColor
-                                : Colors.grey[200],
+                        color: themeColor == c ? themeColor : Colors.grey[200],
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        colorNames[index],
+                        name,
                         style: TextStyle(
-                          color:
-                              themeColor == safeColors[index]
-                                  ? Colors.white
-                                  : Colors.black,
+                          color: themeColor == c ? Colors.white : Colors.black,
                           fontSize: 11,
                           fontWeight: FontWeight.bold,
                         ),
@@ -174,7 +188,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               ),
             ),
             const Divider(height: 30),
-            _buildInput("1. 제안 단가", proposalController, (v) => calculate()),
+
+            // 1. 제안 단가
+            _buildInput(
+              "1. 제안 단가",
+              proposalController,
+              (v) => calculate(),
+              inputFormatters: [intFormatter],
+            ),
+
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -182,7 +204,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                   "VAT 포함",
                   isVatIncluded,
                   (v) => setState(() {
-                    isVatIncluded = v!;
+                    isVatIncluded = v ?? false;
+                    // VAT 방식 바꿀 때는 값만 다시 계산
                     calculate();
                   }),
                 ),
@@ -190,13 +213,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                   "100원 단위 정리",
                   isRoundTo100,
                   (v) => setState(() {
-                    isRoundTo100 = v!;
+                    isRoundTo100 = v ?? false;
                     calculate();
                   }),
                 ),
               ],
             ),
             const SizedBox(height: 15),
+
+            // 2, 3
             Row(
               children: [
                 Expanded(
@@ -204,6 +229,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     "2. 본사 마진율(%)",
                     headMarginRateController,
                     (v) => calculate(trigger: "headRate"),
+                    inputFormatters: [decimalFormatter],
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -213,11 +239,14 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     supplyPriceController,
                     (v) => calculate(trigger: "supply"),
                     color: themeColor.withOpacity(0.05),
+                    inputFormatters: [intFormatter],
                   ),
                 ),
               ],
             ),
             const Divider(height: 40),
+
+            // 4, 5
             Row(
               children: [
                 Expanded(
@@ -225,6 +254,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     "4. 매장 이익률(%)",
                     storeMarginRateController,
                     (v) => calculate(trigger: "storeRate"),
+                    inputFormatters: [decimalFormatter],
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -234,11 +264,14 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     sellingPriceController,
                     (v) => calculate(trigger: "selling"),
                     color: Colors.green[50],
+                    inputFormatters: [intFormatter],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 15),
+
+            // 택배비, 입수량
             Row(
               children: [
                 Expanded(
@@ -246,6 +279,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     "총 택배비",
                     shippingController,
                     (v) => calculate(),
+                    inputFormatters: [intFormatter],
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -254,11 +288,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     "입수량",
                     boxQtyController,
                     (v) => calculate(),
+                    inputFormatters: [intFormatter],
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 30),
+
             _buildReport(finalRate, finalProfit),
           ],
         ),
@@ -283,6 +319,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     TextEditingController ctrl,
     Function(String) onChg, {
     Color? color,
+    List<TextInputFormatter>? inputFormatters,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -296,6 +333,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           controller: ctrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
           onChanged: onChg,
+          inputFormatters: inputFormatters,
           decoration: InputDecoration(
             filled: true,
             fillColor: color ?? Colors.white,
