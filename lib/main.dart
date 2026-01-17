@@ -33,8 +33,6 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
   bool isVatIncluded = false;
   bool isSupplyManual = false;
   bool isSellingManual = false;
-  int supplyRoundUnit = 1;
-  int sellingRoundUnit = 1;
   List<String> history = [];
 
   void calculate({String? trigger}) {
@@ -48,18 +46,18 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
     setState(() {
       double costWithVat = isVatIncluded ? inputCost : inputCost * 1.1;
 
-      if (trigger == "supply" && isSupplyManual) {
+      // 1. 공급가 직접 입력 시 모드 자동 전환 및 역산
+      if (trigger == "supply") {
+        isSupplyManual = true;
         double sPrice = double.tryParse(manualSupplyController.text) ?? 0;
         if (costWithVat > 0) {
           headOfficeMarginController.text = ((sPrice / costWithVat - 1) * 100)
               .toStringAsFixed(1);
         }
-        double fPrice = double.tryParse(manualSellingController.text) ?? 0;
-        if (sPrice > 0) {
-          storeMarginController.text = ((fPrice / sPrice - 1) * 100)
-              .toStringAsFixed(1);
-        }
-      } else if (trigger == "selling" && isSellingManual) {
+      }
+      // 2. 판매가 직접 입력 시 모드 자동 전환 및 역산
+      else if (trigger == "selling") {
+        isSellingManual = true;
         double fPrice = double.tryParse(manualSellingController.text) ?? 0;
         double sPrice = double.tryParse(manualSupplyController.text) ?? 0;
         if (sPrice > 0) {
@@ -68,30 +66,22 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
         }
       }
 
-      if (!isSupplyManual && trigger != "supply") {
+      // 3. 마진율 수정 시 수동 모드 해제 및 자동 계산
+      if (trigger == "headMargin") isSupplyManual = false;
+      if (trigger == "storeMargin") isSellingManual = false;
+
+      if (!isSupplyManual) {
         double rawSupply = costWithVat * (1 + headRate / 100);
-        manualSupplyController.text = _applyRounding(
-          rawSupply,
-          supplyRoundUnit,
-        ).toStringAsFixed(0);
+        manualSupplyController.text = rawSupply.toStringAsFixed(0);
       }
 
-      if (!isSellingManual && trigger != "selling") {
+      if (!isSellingManual) {
         double currentSupply =
             double.tryParse(manualSupplyController.text) ?? 0;
         double rawSelling = currentSupply * (1 + storeRate / 100);
-        manualSellingController.text = _applyRounding(
-          rawSelling,
-          sellingRoundUnit,
-        ).toStringAsFixed(0);
+        manualSellingController.text = rawSelling.toStringAsFixed(0);
       }
     });
-  }
-
-  double _applyRounding(double value, int unit) {
-    if (unit == 10) return (value / 10).round() * 10.0;
-    if (unit == 100) return (value / 100).round() * 100.0;
-    return value;
   }
 
   void reset() {
@@ -106,41 +96,34 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
       isVatIncluded = false;
       isSupplyManual = false;
       isSellingManual = false;
-      supplyRoundUnit = 1;
-      sellingRoundUnit = 1;
       history.clear();
-    });
-  }
-
-  void addHistory() {
-    if (manualSellingController.text.isEmpty) return;
-    setState(() {
-      history.insert(
-        0,
-        "원가:${costController.text} | 공급:${manualSupplyController.text} | 판매:${manualSellingController.text} | 이익:${storeMarginController.text}%",
-      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    double sellP = double.tryParse(manualSellingController.text) ?? 0;
-    double baseC =
-        (isVatIncluded
-            ? (double.tryParse(costController.text) ?? 0)
-            : (double.tryParse(costController.text) ?? 0) * 1.1) +
-        ((double.tryParse(shippingController.text) ?? 0) /
-            (double.tryParse(boxQuantityController.text) ?? 1));
+    double inputC = double.tryParse(costController.text) ?? 0;
+    double vatAmt = isVatIncluded ? inputC / 1.1 * 0.1 : inputC * 0.1;
+    double costWithVat = isVatIncluded ? inputC : inputC * 1.1;
+
+    double shipTotal = double.tryParse(shippingController.text) ?? 0;
+    double bQty = double.tryParse(boxQuantityController.text) ?? 1;
+    double shipPerItem = shipTotal / bQty;
+
+    double sPrice = double.tryParse(manualSupplyController.text) ?? 0;
+    double fPrice = double.tryParse(manualSellingController.text) ?? 0;
+
+    double headProfit = sPrice - costWithVat;
+    double storeProfit = fPrice - sPrice;
+    double totalBaseCost = costWithVat + shipPerItem;
+    double finalNetProfit = fPrice - totalBaseCost;
+    double finalRate = fPrice > 0 ? (finalNetProfit / fPrice * 100) : 0;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text(
           '올인원계산기',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w900),
         ),
         backgroundColor: Colors.orange,
         centerTitle: true,
@@ -153,7 +136,7 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _buildField('원가 입력 (공급가액)', costController),
+            _buildField('원가(공급가액)', costController, (v) => calculate()),
             Row(
               children: [
                 Checkbox(
@@ -166,77 +149,124 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
                     });
                   },
                 ),
-                const Text(
-                  'VAT 포함 원가임',
-                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                Text(
+                  'VAT 포함 (자동계산: ${vatAmt.toStringAsFixed(0)}원)',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),
+            const SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
                   child: _buildField(
-                    '본사 마진율',
+                    '본사 마진%',
                     headOfficeMarginController,
-                    suffix: '%',
+                    (v) => calculate(trigger: "headMargin"),
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 10),
                 Expanded(
                   child: _buildField(
-                    '매장 마진율',
+                    '매장 마진%',
                     storeMarginController,
-                    suffix: '%',
+                    (v) => calculate(trigger: "storeMargin"),
                   ),
                 ),
               ],
             ),
-            const Divider(height: 30, thickness: 1),
+            const Divider(height: 30),
             Row(
               children: [
-                _buildPriceControl(
-                  '공급가',
-                  manualSupplyController,
-                  isSupplyManual,
-                  supplyRoundUnit,
-                  (v) => isSupplyManual = v,
-                  (u) => supplyRoundUnit = u,
-                  Colors.blue[800]!,
-                  "supply",
+                Expanded(
+                  child: _buildField(
+                    '공급가 직접입력',
+                    manualSupplyController,
+                    (v) => calculate(trigger: "supply"),
+                    color: Colors.blue[50],
+                  ),
                 ),
-                const SizedBox(width: 12),
-                _buildPriceControl(
-                  '최종 판매가',
-                  manualSellingController,
-                  isSellingManual,
-                  sellingRoundUnit,
-                  (v) => isSellingManual = v,
-                  (u) => sellingRoundUnit = u,
-                  Colors.green[800]!,
-                  "selling",
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildField(
+                    '판매가 직접입력',
+                    manualSellingController,
+                    (v) => calculate(trigger: "selling"),
+                    color: Colors.green[50],
+                  ),
                 ),
               ],
             ),
-            const SizedBox(height: 25),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '본사익: ${headProfit.toStringAsFixed(0)}원',
+                    style: TextStyle(
+                      color: Colors.blue[900],
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '매장익: ${storeProfit.toStringAsFixed(0)}원',
+                    style: TextStyle(
+                      color: Colors.green[900],
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
             Row(
               children: [
-                Expanded(child: _buildField('총 택배비', shippingController)),
-                const SizedBox(width: 12),
-                Expanded(child: _buildField('박스당 수량', boxQuantityController)),
+                Expanded(
+                  child: _buildField(
+                    '총 택배비',
+                    shippingController,
+                    (v) => calculate(),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _buildField(
+                    '박스 수량',
+                    boxQuantityController,
+                    (v) => calculate(),
+                  ),
+                ),
               ],
+            ),
+            Text(
+              '개당 배송비: ${shipPerItem.toStringAsFixed(0)}원',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Colors.grey,
+                fontWeight: FontWeight.bold,
+              ),
             ),
             const SizedBox(height: 20),
-            _buildReport(sellP, baseC),
+            _buildReport(finalRate, finalNetProfit),
             const SizedBox(height: 15),
             ElevatedButton(
-              onPressed: addHistory,
+              onPressed:
+                  () => setState(
+                    () => history.insert(
+                      0,
+                      "공급:${sPrice.toStringAsFixed(0)} | 판매:${fPrice.toStringAsFixed(0)} | 이익률:${finalRate.toStringAsFixed(1)}%",
+                    ),
+                  ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 50),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
               ),
               child: const Text(
                 "계산 기록 저장",
@@ -245,16 +275,6 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
             ),
             if (history.isNotEmpty) ...[
               const SizedBox(height: 20),
-              const Text(
-                "--- 계산 히스토리 ---",
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 10),
               ...history.map(
                 (h) => Card(
                   child: ListTile(
@@ -278,151 +298,48 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
 
   Widget _buildField(
     String label,
-    TextEditingController ctrl, {
-    String? suffix,
+    TextEditingController ctrl,
+    Function(String) onChg, {
+    Color? color,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
         ),
         const SizedBox(height: 4),
         TextField(
           controller: ctrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          onChanged: onChg,
           decoration: InputDecoration(
-            suffixText: suffix,
+            filled: true,
+            fillColor: color ?? Colors.white,
             border: const OutlineInputBorder(),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 10,
               vertical: 8,
             ),
           ),
-          onChanged: (v) => calculate(),
         ),
-        const SizedBox(height: 8),
       ],
     );
   }
 
-  Widget _buildPriceControl(
-    String label,
-    TextEditingController ctrl,
-    bool isMan,
-    int unit,
-    Function(bool) toggle,
-    Function(int) setUnit,
-    Color col,
-    String type,
-  ) {
-    return Expanded(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: col,
-            ),
-          ),
-          const SizedBox(height: 4),
-          TextField(
-            controller: ctrl,
-            enabled: isMan,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: InputDecoration(
-              border: const OutlineInputBorder(),
-              fillColor: isMan ? Colors.white : Colors.grey[100],
-              filled: true,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 10,
-                vertical: 8,
-              ),
-            ),
-            onChanged: (v) => calculate(trigger: type),
-          ),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Row(
-                children: [
-                  _roundChip('10', 10, unit, setUnit),
-                  const SizedBox(width: 4),
-                  _roundChip('100', 100, unit, setUnit),
-                ],
-              ),
-              IconButton(
-                icon: Icon(
-                  isMan ? Icons.edit : Icons.edit_off,
-                  size: 20,
-                  color: isMan ? Colors.red : Colors.grey,
-                ),
-                onPressed:
-                    () => setState(() {
-                      toggle(!isMan);
-                      calculate();
-                    }),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _roundChip(String lab, int u, int curr, Function(int) onS) {
-    bool isSelected = (curr == u);
-    return InkWell(
-      onTap:
-          () => setState(() {
-            onS(isSelected ? 1 : u);
-            calculate();
-          }),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.orange : Colors.grey[200],
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Text(
-          lab,
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.bold,
-            color: isSelected ? Colors.white : Colors.black87,
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildReport(double sell, double cost) {
-    double profit = sell - cost;
-    double rate = sell > 0 ? (profit / sell * 100) : 0;
+  Widget _buildReport(double rate, double profit) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.black,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          const Text(
-            '최종 결과 보고 (배송비 포함)',
-            style: TextStyle(color: Colors.white70, fontSize: 11),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _repItem("최종매장이익률(개당)", "${rate.toStringAsFixed(1)}%"),
-              _repItem("최종매장이익금(개당)", "${profit.toStringAsFixed(0)}원"),
-            ],
-          ),
+          _repItem("최종매장이익률(개당)", "${rate.toStringAsFixed(1)}%"),
+          _repItem("최종매장이익금(개당)", "${profit.toStringAsFixed(0)}원"),
         ],
       ),
     );
@@ -431,12 +348,12 @@ class _MarginCalculatorScreenState extends State<MarginCalculatorScreen> {
   Widget _repItem(String t, String v) => Column(
     children: [
       Text(t, style: const TextStyle(color: Colors.white60, fontSize: 10)),
-      const SizedBox(height: 4),
+      const SizedBox(height: 5),
       Text(
         v,
         style: const TextStyle(
           color: Colors.orange,
-          fontSize: 16,
+          fontSize: 18,
           fontWeight: FontWeight.bold,
         ),
       ),
