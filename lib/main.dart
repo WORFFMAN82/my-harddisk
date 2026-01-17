@@ -7,7 +7,7 @@ class AnyPriceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '아무단가나그냥너!!',
+      title: '아무단가나그냥너어',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.orange, useMaterial3: true),
       home: const AnyPriceScreen(),
@@ -22,7 +22,7 @@ class AnyPriceScreen extends StatefulWidget {
 }
 
 class _AnyPriceScreenState extends State<AnyPriceScreen> {
-  final proposalController = TextEditingController(); // 제안단가
+  final proposalController = TextEditingController();
   final headMarginRateController = TextEditingController();
   final storeMarginRateController = TextEditingController();
   final supplyPriceController = TextEditingController();
@@ -30,13 +30,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   final shippingController = TextEditingController();
   final boxQtyController = TextEditingController(text: "1");
 
-  bool isVatIncluded = false; // 제안단가 VAT 포함 여부
+  bool isVatIncluded = false;
   List<String> history = [];
 
   void calculate({String? trigger}) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
-    // 최종 매입가 결정: VAT 미포함 제안일 경우 1.1배 자동 계산
-    double cost = isVatIncluded ? proposal : proposal * 1.1;
+    double cost = isVatIncluded ? proposal : proposal * 1.1; // 최종 매입원가
 
     double headRate = double.tryParse(headMarginRateController.text) ?? 0;
     double storeRate = double.tryParse(storeMarginRateController.text) ?? 0;
@@ -44,34 +43,39 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double selling = double.tryParse(sellingPriceController.text) ?? 0;
 
     setState(() {
-      // 1. 공급가 수정 시 -> 본사 마진율 역계산
+      // 1. 공급가 수정 -> 원가 대비 마크업 역산
       if (trigger == "supply") {
         if (cost > 0)
           headMarginRateController.text = ((supply / cost - 1) * 100)
               .toStringAsFixed(1);
       }
-      // 2. 판매가 수정 시 -> 매장 마진율 역계산
+      // 2. 판매가 수정 -> 판매가 기준 이익률(형님 방식) 역산
       else if (trigger == "selling") {
-        if (supply > 0)
-          storeMarginRateController.text = ((selling / supply - 1) * 100)
+        if (selling > 0)
+          storeMarginRateController.text = ((selling - supply) / selling * 100)
               .toStringAsFixed(1);
       }
-      // 3. 본사 마진율 수정 시 -> 공급가 계산
+      // 3. 본사 마진율 수정 -> 공급가 계산
       else if (trigger == "headRate") {
         supply = cost * (1 + headRate / 100);
         supplyPriceController.text = supply.toStringAsFixed(0);
       }
-      // 4. 매장 마진율 수정 시 -> 판매가 계산
+      // 4. 매장 마진율 수정 -> 판매가 기준(형님 방식)으로 가격 결정
       else if (trigger == "storeRate") {
-        selling = supply * (1 + storeRate / 100);
-        sellingPriceController.text = selling.toStringAsFixed(0);
+        // 공식: 판매가 = 공급가 / (1 - 이익률)
+        if (storeRate < 100) {
+          selling = supply / (1 - storeRate / 100);
+          sellingPriceController.text = selling.toStringAsFixed(0);
+        }
       }
-      // 5. 제안단가/VAT 클릭 시 -> 전체 자동 갱신
+      // 5. 기본 연동
       else {
         supply = cost * (1 + headRate / 100);
         supplyPriceController.text = supply.toStringAsFixed(0);
-        selling = supply * (1 + storeRate / 100);
-        sellingPriceController.text = selling.toStringAsFixed(0);
+        if (storeRate < 100) {
+          selling = supply / (1 - storeRate / 100);
+          sellingPriceController.text = selling.toStringAsFixed(0);
+        }
       }
     });
   }
@@ -93,20 +97,16 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   @override
   Widget build(BuildContext context) {
     double p = double.tryParse(proposalController.text) ?? 0;
-    double cost = isVatIncluded ? p : p * 1.1; // 최종 매입가
+    double cost = isVatIncluded ? p : p * 1.1;
     double s = double.tryParse(supplyPriceController.text) ?? 0;
     double f = double.tryParse(sellingPriceController.text) ?? 0;
-    double ship =
-        (double.tryParse(shippingController.text) ?? 0) /
-        (double.tryParse(boxQtyController.text) ?? 1);
+    double shipTotal = double.tryParse(shippingController.text) ?? 0;
+    double qty = double.tryParse(boxQtyController.text) ?? 1;
+    double shipPerItem = shipTotal / qty;
 
-    double headProfit = s - cost;
-    double storeProfit = f - s; // 순수 매장 마진 (배송비 제외)
-
-    // 최종 리포트 계산 (배송비 포함)
-    double totalBaseCost = cost + ship;
-    double finalNetProfit = f - s - ship; // 매장이 가져가는 실제 돈 (판매가 - 공급가 - 배송비)
-    // 매장 이익률 = (판매가 - 공급가 - 개당배송비) / 판매가
+    // 최종 매장 이익금 = 판매가 - 공급가 - 개당 배송비
+    double finalNetProfit = f - s - shipPerItem;
+    // 최종 매장 이익률 = (판매가 - 공급가 - 개당 배송비) / 판매가 (형님 방식 적용)
     double finalRate = f > 0 ? (finalNetProfit / f * 100) : 0;
 
     return Scaffold(
@@ -140,7 +140,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                   },
                 ),
                 Text(
-                  "VAT 포함 제안임 (최종매입가: ${cost.toStringAsFixed(0)}원)",
+                  "VAT 포함 제안 (최종매입가: ${cost.toStringAsFixed(0)}원)",
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
@@ -169,20 +169,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            Text(
-              '본사 이익: ${headProfit.toStringAsFixed(0)}원',
-              style: TextStyle(
-                color: Colors.blue[900],
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
             const Divider(height: 30),
             Row(
               children: [
                 Expanded(
                   child: _buildInput(
-                    "4. 매장 마진율(%)",
+                    "4. 매장 이익률(판매가 기준 %)",
                     storeMarginRateController,
                     (v) => calculate(trigger: "storeRate"),
                   ),
@@ -198,14 +190,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            Text(
-              '매장 순 마진: ${storeProfit.toStringAsFixed(0)}원',
-              style: TextStyle(
-                color: Colors.green[900],
-                fontSize: 12,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
             const Divider(height: 30),
             Row(
               children: [
@@ -219,7 +203,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _buildInput(
-                    "입수량",
+                    "박스입수량",
                     boxQtyController,
                     (v) => calculate(),
                   ),
@@ -234,7 +218,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                   () => setState(
                     () => history.insert(
                       0,
-                      "공급:${s.toStringAsFixed(0)}→판매:${f.toStringAsFixed(0)} (이익:${finalRate.toStringAsFixed(1)}%)",
+                      "공급:${s.toStringAsFixed(0)}→판매:${f.toStringAsFixed(0)} (이익률:${finalRate.toStringAsFixed(1)}%)",
                     ),
                   ),
               style: ElevatedButton.styleFrom(
