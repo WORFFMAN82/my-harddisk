@@ -7,7 +7,7 @@ class AnyPriceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '아무단가나그냥너어',
+      title: '다계산해줄지니',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(primarySwatch: Colors.orange, useMaterial3: true),
       home: const AnyPriceScreen(),
@@ -24,7 +24,7 @@ class AnyPriceScreen extends StatefulWidget {
 class _AnyPriceScreenState extends State<AnyPriceScreen> {
   final proposalController = TextEditingController();
   final headMarginRateController = TextEditingController();
-  final storeMarginRateController = TextEditingController();
+  final storeMarginRateController = TextEditingController(); // 최종 매장 이익률 입력용
   final supplyPriceController = TextEditingController();
   final sellingPriceController = TextEditingController();
   final shippingController = TextEditingController();
@@ -41,39 +41,44 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double storeRate = double.tryParse(storeMarginRateController.text) ?? 0;
     double supply = double.tryParse(supplyPriceController.text) ?? 0;
     double selling = double.tryParse(sellingPriceController.text) ?? 0;
+    double shipTotal = double.tryParse(shippingController.text) ?? 0;
+    double qty = double.tryParse(boxQtyController.text) ?? 1;
+    double shipPerItem = shipTotal / qty;
 
     setState(() {
-      // 1. 공급가 수정 -> 원가 대비 마크업 역산
+      // 1. 지점공급가 수정 시 -> 본사 마진율 역계산
       if (trigger == "supply") {
         if (cost > 0)
           headMarginRateController.text = ((supply / cost - 1) * 100)
               .toStringAsFixed(1);
       }
-      // 2. 판매가 수정 -> 판매가 기준 이익률(형님 방식) 역산
+      // 2. 최종 판매가 수정 시 -> 매장 이익률(판매가 기준) 역계산 (배송비 고려)
       else if (trigger == "selling") {
-        if (selling > 0)
-          storeMarginRateController.text = ((selling - supply) / selling * 100)
+        if (selling > 0) {
+          double profit = selling - supply - shipPerItem;
+          storeMarginRateController.text = (profit / selling * 100)
               .toStringAsFixed(1);
+        }
       }
-      // 3. 본사 마진율 수정 -> 공급가 계산
+      // 3. 본사 마진율 수정 시 -> 공급가 계산
       else if (trigger == "headRate") {
         supply = cost * (1 + headRate / 100);
         supplyPriceController.text = supply.toStringAsFixed(0);
       }
-      // 4. 매장 마진율 수정 -> 판매가 기준(형님 방식)으로 가격 결정
+      // 4. 매장 이익률 직접 입력 시 -> 최종 판매가 역산 (형님의 핵심 요청)
+      // 공식: 판매가 = (공급가 + 개당배송비) / (1 - 희망이익률/100)
       else if (trigger == "storeRate") {
-        // 공식: 판매가 = 공급가 / (1 - 이익률)
         if (storeRate < 100) {
-          selling = supply / (1 - storeRate / 100);
+          selling = (supply + shipPerItem) / (1 - storeRate / 100);
           sellingPriceController.text = selling.toStringAsFixed(0);
         }
       }
-      // 5. 기본 연동
+      // 5. 원가/배송비 등 기본 변경 시 -> 현재 설정된 이익률 기준으로 판매가 갱신
       else {
         supply = cost * (1 + headRate / 100);
         supplyPriceController.text = supply.toStringAsFixed(0);
         if (storeRate < 100) {
-          selling = supply / (1 - storeRate / 100);
+          selling = (supply + shipPerItem) / (1 - storeRate / 100);
           sellingPriceController.text = selling.toStringAsFixed(0);
         }
       }
@@ -104,16 +109,23 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double qty = double.tryParse(boxQtyController.text) ?? 1;
     double shipPerItem = shipTotal / qty;
 
-    // 최종 매장 이익금 = 판매가 - 공급가 - 개당 배송비
+    double headProfit = s - cost;
     double finalNetProfit = f - s - shipPerItem;
-    // 최종 매장 이익률 = (판매가 - 공급가 - 개당 배송비) / 판매가 (형님 방식 적용)
     double finalRate = f > 0 ? (finalNetProfit / f * 100) : 0;
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text(
-          '아무단가나그냥너어',
-          style: TextStyle(fontWeight: FontWeight.w900),
+        title: const Column(
+          children: [
+            Text(
+              '다계산해줄지니',
+              style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20),
+            ),
+            Text(
+              '(멋진 거래를 위하여)',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+            ),
+          ],
         ),
         backgroundColor: Colors.orange,
         centerTitle: true,
@@ -140,7 +152,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                   },
                 ),
                 Text(
-                  "VAT 포함 제안 (최종매입가: ${cost.toStringAsFixed(0)}원)",
+                  "VAT 포함 제안임 (최종매입가: ${cost.toStringAsFixed(0)}원)",
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 12,
@@ -169,14 +181,26 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            const Divider(height: 30),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 4),
+              child: Text(
+                '본사 이익: ${headProfit.toStringAsFixed(0)}원',
+                style: TextStyle(
+                  color: Colors.blue[900],
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const Divider(height: 40, thickness: 1.5),
             Row(
               children: [
                 Expanded(
                   child: _buildInput(
-                    "4. 매장 이익률(판매가 기준 %)",
+                    "4. 매장 이익률 직접입력(%)",
                     storeMarginRateController,
                     (v) => calculate(trigger: "storeRate"),
+                    color: Colors.orange[50],
                   ),
                 ),
                 const SizedBox(width: 10),
@@ -190,7 +214,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            const Divider(height: 30),
+            const SizedBox(height: 20),
             Row(
               children: [
                 Expanded(
@@ -210,31 +234,35 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 25),
+            const SizedBox(height: 30),
             _buildReport(finalRate, finalNetProfit),
-            const SizedBox(height: 15),
+            const SizedBox(height: 20),
             ElevatedButton(
               onPressed:
                   () => setState(
                     () => history.insert(
                       0,
-                      "공급:${s.toStringAsFixed(0)}→판매:${f.toStringAsFixed(0)} (이익률:${finalRate.toStringAsFixed(1)}%)",
+                      "공급:${s.toStringAsFixed(0)}→판매:${f.toStringAsFixed(0)} (이익:${finalRate.toStringAsFixed(1)}%)",
                     ),
                   ),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.black,
                 foregroundColor: Colors.white,
-                minimumSize: const Size(double.infinity, 50),
+                minimumSize: const Size(double.infinity, 55),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
               ),
               child: const Text(
                 "계산 기록 저장",
-                style: TextStyle(fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
               ),
             ),
             if (history.isNotEmpty) ...[
               const SizedBox(height: 20),
               ...history.map(
                 (h) => Card(
+                  margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
                     dense: true,
                     title: Text(
@@ -267,7 +295,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           label,
           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 6),
         TextField(
           controller: ctrl,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
@@ -275,10 +303,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           decoration: InputDecoration(
             filled: true,
             fillColor: color ?? Colors.white,
-            border: const OutlineInputBorder(),
+            border: const OutlineInputBorder(
+              borderRadius: BorderRadius.all(Radius.circular(8)),
+            ),
             contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 10,
+              horizontal: 12,
+              vertical: 14,
             ),
           ),
         ),
@@ -288,16 +318,23 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   Widget _buildReport(double rate, double profit) {
     return Container(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(25),
       decoration: BoxDecoration(
         color: Colors.black,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(15),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black26,
+            blurRadius: 10,
+            offset: Offset(0, 4),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
-          _repItem("최종매장이익률(개당)", "${rate.toStringAsFixed(1)}%"),
-          _repItem("최종매장이익금(개당)", "${profit.toStringAsFixed(0)}원"),
+          _repItem("최종 매장 이익률", "${rate.toStringAsFixed(1)}%"),
+          _repItem("최종 매장 이익금", "${profit.toStringAsFixed(0)}원"),
         ],
       ),
     );
@@ -305,13 +342,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   Widget _repItem(String t, String v) => Column(
     children: [
-      Text(t, style: const TextStyle(color: Colors.white60, fontSize: 10)),
-      const SizedBox(height: 5),
+      Text(t, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+      const SizedBox(height: 8),
       Text(
         v,
         style: const TextStyle(
           color: Colors.orange,
-          fontSize: 18,
+          fontSize: 22,
           fontWeight: FontWeight.bold,
         ),
       ),
