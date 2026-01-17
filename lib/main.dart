@@ -11,7 +11,10 @@ class AnyPriceApp extends StatelessWidget {
     return MaterialApp(
       title: '다계산해줄지니',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(useMaterial3: true),
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: const Color(0xFFF5F5F7),
+      ),
       home: const AnyPriceScreen(),
     );
   }
@@ -36,16 +39,21 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   bool isVatIncluded = false;
   bool isRoundTo100 = false;
 
-  // 테마 옵션 한 군데로 정리
-  final List<Map<String, dynamic>> themeOptions = const [
-    {'name': '오렌지', 'color': Color(0xFFFF9800)},
-    {'name': '블루', 'color': Color(0xFF2196F3)},
-    {'name': '그린', 'color': Color(0xFF4CAF50)},
-    {'name': '레드', 'color': Color(0xFFF44336)},
-    {'name': '다크', 'color': Color(0xFF607D8B)},
+  // 트렌디 컬러 10개 (라이트 모드 기반)
+  final List<Color> themeColors = const [
+    Color(0xFFFF6F61), // 코랄
+    Color(0xFFFF9AA2), // 살몬 핑크
+    Color(0xFF7FDBDA), // 민트
+    Color(0xFF5DADEC), // 소프트 블루
+    Color(0xFF273469), // 네이비
+    Color(0xFF6B8E23), // 올리브
+    Color(0xFFF4B41A), // 머스타드
+    Color(0xFF8D909B), // 워밍 그레이
+    Color(0xFF36454F), // 차콜
+    Color(0xFF4B0082), // 다크 퍼플
   ];
 
-  Color themeColor = const Color(0xFFFF9800);
+  Color themeColor = const Color(0xFFFF6F61); // 기본 코랄
 
   // 숫자 입력 포맷터
   final TextInputFormatter intFormatter =
@@ -130,174 +138,273 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     if (qty <= 0) qty = 1;
     double shipPerItem = shipTotal / qty;
 
-    double finalProfit = f - s - shipPerItem;
-    double finalRate = f > 0 ? (finalProfit / f * 100) : 0;
+    double finalProfit = f - s - shipPerItem; // 실질 이익금
+    double finalRate = f > 0 ? (finalProfit / f * 100) : 0; // 실질 이익률
+    double diff = f - s; // 판매가 - 공급가 차액
 
     return Scaffold(
-      backgroundColor: Colors.white,
       appBar: AppBar(
-        title: const Text(
-          '다계산해줄지니',
-          style: TextStyle(fontWeight: FontWeight.w900),
-        ),
+        elevation: 0,
         backgroundColor: themeColor,
         foregroundColor: Colors.white,
         centerTitle: true,
+        title: const Text(
+          '다계산해줄지니',
+          style: TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 22,
+            letterSpacing: 2.0, // 영화 포스터 느낌
+          ),
+        ),
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text(
-              "테마 색상 선택",
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: List.generate(themeOptions.length, (index) {
-                  final opt = themeOptions[index];
-                  final Color c = opt['color'] as Color;
-                  final String name = opt['name'] as String;
+            _buildThemeSelector(),
+            const SizedBox(height: 16),
+            _buildSummaryCard(finalRate, finalProfit, diff),
+            const SizedBox(height: 20),
+            _buildInputCard(),
+          ],
+        ),
+      ),
+    );
+  }
 
+  // 상단 색상 선택 (작고 간결하게)
+  Widget _buildThemeSelector() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "테마 색상",
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children:
+                themeColors.map((c) {
+                  final bool selected = (themeColor == c);
                   return GestureDetector(
                     onTap: () => setState(() => themeColor = c),
                     child: Container(
-                      margin: const EdgeInsets.only(right: 10),
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 15,
-                        vertical: 8,
-                      ),
+                      margin: const EdgeInsets.only(right: 8),
+                      width: selected ? 30 : 24,
+                      height: selected ? 30 : 24,
                       decoration: BoxDecoration(
-                        color: themeColor == c ? themeColor : Colors.grey[200],
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        name,
-                        style: TextStyle(
-                          color: themeColor == c ? Colors.white : Colors.black,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: selected ? Colors.black : Colors.grey.shade300,
+                          width: selected ? 2 : 1,
                         ),
                       ),
                     ),
                   );
-                }),
-              ),
-            ),
-            const Divider(height: 30),
-
-            // 1. 제안 단가
-            _buildInput(
-              "1. 제안 단가",
-              proposalController,
-              (v) => calculate(),
-              inputFormatters: [intFormatter],
-            ),
-
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                _buildCheck(
-                  "VAT 포함",
-                  isVatIncluded,
-                  (v) => setState(() {
-                    isVatIncluded = v ?? false;
-                    // VAT 방식 바꿀 때는 값만 다시 계산
-                    calculate();
-                  }),
-                ),
-                _buildCheck(
-                  "100원 단위 정리",
-                  isRoundTo100,
-                  (v) => setState(() {
-                    isRoundTo100 = v ?? false;
-                    calculate();
-                  }),
-                ),
-              ],
-            ),
-            const SizedBox(height: 15),
-
-            // 2, 3
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInput(
-                    "2. 본사 마진율(%)",
-                    headMarginRateController,
-                    (v) => calculate(trigger: "headRate"),
-                    inputFormatters: [decimalFormatter],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildInput(
-                    "3. 지점공급가",
-                    supplyPriceController,
-                    (v) => calculate(trigger: "supply"),
-                    color: themeColor.withOpacity(0.05),
-                    inputFormatters: [intFormatter],
-                  ),
-                ),
-              ],
-            ),
-            const Divider(height: 40),
-
-            // 4, 5
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInput(
-                    "4. 매장 이익률(%)",
-                    storeMarginRateController,
-                    (v) => calculate(trigger: "storeRate"),
-                    inputFormatters: [decimalFormatter],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildInput(
-                    "5. 최종 판매가",
-                    sellingPriceController,
-                    (v) => calculate(trigger: "selling"),
-                    color: Colors.green[50],
-                    inputFormatters: [intFormatter],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 15),
-
-            // 택배비, 입수량
-            Row(
-              children: [
-                Expanded(
-                  child: _buildInput(
-                    "총 택배비",
-                    shippingController,
-                    (v) => calculate(),
-                    inputFormatters: [intFormatter],
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _buildInput(
-                    "입수량",
-                    boxQtyController,
-                    (v) => calculate(),
-                    inputFormatters: [intFormatter],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 30),
-
-            _buildReport(finalRate, finalProfit),
-          ],
+                }).toList(),
+          ),
         ),
+      ],
+    );
+  }
+
+  // 요약 카드 (이익률, 이익금, 차액)
+  Widget _buildSummaryCard(double rate, double profit, double diff) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [themeColor.withOpacity(0.9), themeColor.withOpacity(0.7)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: themeColor.withOpacity(0.2),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "요약",
+            style: TextStyle(color: Colors.white70, fontSize: 11),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            "매장 이익률 ${rate.toStringAsFixed(1)}%",
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            "실질 이익금 (택배비 반영): ${profit.toStringAsFixed(0)}원",
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            "판매가 - 공급가 차액: ${diff.toStringAsFixed(0)}원",
+            style: const TextStyle(color: Colors.white, fontSize: 13),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 입력 카드 (본체)
+  Widget _buildInputCard() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            "기본 정보",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 12),
+
+          // 1. 제안 단가
+          _buildInput(
+            "1. 제안 단가",
+            proposalController,
+            (v) => calculate(),
+            inputFormatters: [intFormatter],
+          ),
+          const SizedBox(height: 8),
+
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildCheck("VAT 포함", isVatIncluded, (v) {
+                setState(() {
+                  isVatIncluded = v ?? false;
+                  calculate();
+                });
+              }),
+              _buildCheck("100원 단위 정리", isRoundTo100, (v) {
+                setState(() {
+                  isRoundTo100 = v ?? false;
+                  calculate();
+                });
+              }),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+          const Text(
+            "본사 · 지점 조건",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+
+          // 2, 3
+          Row(
+            children: [
+              Expanded(
+                child: _buildInput(
+                  "2. 본사 마진율(%)",
+                  headMarginRateController,
+                  (v) => calculate(trigger: "headRate"),
+                  inputFormatters: [decimalFormatter],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildInput(
+                  "3. 지점공급가",
+                  supplyPriceController,
+                  (v) => calculate(trigger: "supply"),
+                  color: themeColor.withOpacity(0.05),
+                  inputFormatters: [intFormatter],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+          const Text(
+            "매장 판매 조건",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+
+          // 4, 5
+          Row(
+            children: [
+              Expanded(
+                child: _buildInput(
+                  "4. 매장 이익률(%)",
+                  storeMarginRateController,
+                  (v) => calculate(trigger: "storeRate"),
+                  inputFormatters: [decimalFormatter],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildInput(
+                  "5. 최종 판매가",
+                  sellingPriceController,
+                  (v) => calculate(trigger: "selling"),
+                  color: Colors.green[50],
+                  inputFormatters: [intFormatter],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 18),
+          const Text(
+            "물류 조건",
+            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 10),
+
+          // 택배비, 입수량
+          Row(
+            children: [
+              Expanded(
+                child: _buildInput(
+                  "총 택배비",
+                  shippingController,
+                  (v) => calculate(),
+                  inputFormatters: [intFormatter],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildInput(
+                  "입수량",
+                  boxQtyController,
+                  (v) => calculate(),
+                  inputFormatters: [intFormatter],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -337,45 +444,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           decoration: InputDecoration(
             filled: true,
             fillColor: color ?? Colors.white,
-            border: const OutlineInputBorder(),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 10,
               vertical: 12,
             ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildReport(double rate, double profit) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.black,
-        borderRadius: BorderRadius.circular(15),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _repItem("최종 매장 이익률", "${rate.toStringAsFixed(1)}%"),
-          _repItem("최종 매장 이익금", "${profit.toStringAsFixed(0)}원"),
-        ],
-      ),
-    );
-  }
-
-  Widget _repItem(String t, String v) {
-    return Column(
-      children: [
-        Text(t, style: const TextStyle(color: Colors.white70, fontSize: 10)),
-        const SizedBox(height: 5),
-        Text(
-          v,
-          style: TextStyle(
-            color: themeColor,
-            fontSize: 22,
-            fontWeight: FontWeight.bold,
           ),
         ),
       ],
