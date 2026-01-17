@@ -23,20 +23,20 @@ class AnyPriceScreen extends StatefulWidget {
 
 class _AnyPriceScreenState extends State<AnyPriceScreen> {
   final proposalController = TextEditingController();
-  final headMarginRateController = TextEditingController();
-  final storeMarginRateController = TextEditingController();
+  final headMarginRateController = TextEditingController(); // 엑셀의 본사 마진율
+  final storeMarginRateController = TextEditingController(); // 엑셀의 매장 마진율
   final supplyPriceController = TextEditingController();
   final sellingPriceController = TextEditingController();
   final shippingController = TextEditingController();
   final boxQtyController = TextEditingController(text: "1");
 
   bool isVatIncluded = false;
-  bool isRoundTo100 = false; // 100원 단위 절삭 여부
+  bool isRoundTo100 = false;
   List<String> history = [];
 
   void calculate({String? trigger}) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
-    double cost = isVatIncluded ? proposal : proposal * 1.1;
+    double cost = isVatIncluded ? proposal : proposal * 1.1; // 최종 매입가
 
     double headRate = double.tryParse(headMarginRateController.text) ?? 0;
     double storeRate = double.tryParse(storeMarginRateController.text) ?? 0;
@@ -47,27 +47,29 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double shipPerItem = shipTotal / qty;
 
     setState(() {
-      // 1. 지점공급가 수정
+      // 1. 지점공급가 수정 시 -> 본사 이익률 역산 (판매가 기준)
       if (trigger == "supply") {
-        if (cost > 0)
-          headMarginRateController.text = ((supply / cost - 1) * 100)
+        if (supply > 0)
+          headMarginRateController.text = ((supply - cost) / supply * 100)
               .toStringAsFixed(1);
       }
-      // 2. 최종 판매가 수정 -> 현재 상태의 이익률 역산
+      // 2. 최종 판매가 수정 시 -> 매장 이익률 역산 (배송비 제외 순이익 기준)
       else if (trigger == "selling") {
         if (selling > 0) {
-          double profit = selling - supply - shipPerItem;
-          storeMarginRateController.text = (profit / selling * 100)
+          double netProfit = selling - supply - shipPerItem;
+          storeMarginRateController.text = (netProfit / selling * 100)
               .toStringAsFixed(1);
         }
       }
-      // 3. 본사 마진율 수정 -> 공급가 계산
+      // 3. 본사 희망 마진율 입력 시 -> 공급가 계산 (판매가 기준 공식)
       else if (trigger == "headRate") {
-        supply = cost * (1 + headRate / 100);
-        if (isRoundTo100) supply = (supply / 100).round() * 100.0;
-        supplyPriceController.text = supply.toStringAsFixed(0);
+        if (headRate < 100) {
+          supply = cost / (1 - headRate / 100);
+          if (isRoundTo100) supply = (supply / 100).round() * 100.0;
+          supplyPriceController.text = supply.toStringAsFixed(0);
+        }
       }
-      // 4. 매장 이익률 입력 -> 판매가 역산 (배송비 포함 로직)
+      // 4. 매장 희망 마진율 입력 시 -> 판매가 계산 (배송비 포함 역산)
       else if (trigger == "storeRate") {
         if (storeRate < 100) {
           selling = (supply + shipPerItem) / (1 - storeRate / 100);
@@ -75,12 +77,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           sellingPriceController.text = selling.toStringAsFixed(0);
         }
       }
-      // 5. 기본 갱신
+      // 5. 기본 연동
       else {
-        supply = cost * (1 + headRate / 100);
-        if (isRoundTo100) supply = (supply / 100).round() * 100.0;
-        supplyPriceController.text = supply.toStringAsFixed(0);
-
+        if (headRate < 100) {
+          supply = cost / (1 - headRate / 100);
+          if (isRoundTo100) supply = (supply / 100).round() * 100.0;
+          supplyPriceController.text = supply.toStringAsFixed(0);
+        }
         if (storeRate < 100) {
           selling = (supply + shipPerItem) / (1 - storeRate / 100);
           if (isRoundTo100) selling = (selling / 100).round() * 100.0;
@@ -100,9 +103,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double qty = double.tryParse(boxQtyController.text) ?? 1;
     double shipPerItem = shipTotal / qty;
 
-    // 최종 결과값: 판매가에서 (공급가 + 개당 택배비)를 뺀 진짜 이익
-    double finalNetProfit = f - s - shipPerItem;
-    double finalRate = f > 0 ? (finalNetProfit / f * 100) : 0;
+    double netProfitPerItem = f - s - shipPerItem;
+    double netRatePerItem = f > 0 ? (netProfitPerItem / f * 100) : 0;
 
     return Scaffold(
       appBar: AppBar(
@@ -161,7 +163,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                       },
                     ),
                     const Text(
-                      "100원 단위 절삭",
+                      "100원 단위 정리",
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.bold,
@@ -234,26 +236,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
-              child: Text(
-                '개당 배송비: ${shipPerItem.toStringAsFixed(0)}원',
-                style: const TextStyle(
-                  color: Colors.redAccent,
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(height: 20),
-            _buildReport(finalRate, finalNetProfit),
+            const SizedBox(height: 25),
+            _buildReport(netRatePerItem, netProfitPerItem),
             const SizedBox(height: 15),
             ElevatedButton(
               onPressed:
                   () => setState(
                     () => history.insert(
                       0,
-                      "공급:${s.toStringAsFixed(0)}→판매:${f.toStringAsFixed(0)} (순이익률:${finalRate.toStringAsFixed(1)}%)",
+                      "매입:${cost.toStringAsFixed(0)}→공급:${s.toStringAsFixed(0)}→판매:${f.toStringAsFixed(0)} (순익:${netRatePerItem.toStringAsFixed(1)}%)",
                     ),
                   ),
               style: ElevatedButton.styleFrom(
