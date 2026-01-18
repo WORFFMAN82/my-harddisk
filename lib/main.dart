@@ -122,7 +122,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   double calculatedHeadRate = 0;
   double calculatedStoreRate = 0;
   double shippingCostPerUnit = 0;
-  double actualSellingPrice = 0; // 택배비 제외한 실제 판매가
+  double actualSellingPrice = 0;
   double finalStoreProfit = 0;
   double finalStoreProfitRate = 0;
   double priceDifference = 0;
@@ -352,14 +352,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
       // 3. 시나리오별 계산
       if (trigger == 'proposal' && headRate > 0 && vatIncludedProposal > 0) {
-        // 시나리오 1: 제안단가 + 본사이익률 → 공급가 계산
-        // 공급가 = 제안단가 / (1 - 본사이익률/100)
         calculatedSupply = roundTo100(
           vatIncludedProposal / (1 - headRate / 100),
         );
 
         if (storeRate > 0) {
-          // 판매가 = 공급가 / (1 - 매장이익률/100)
           calculatedSelling = roundTo100(
             calculatedSupply / (1 - storeRate / 100),
           );
@@ -367,7 +364,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       } else if (trigger == 'headRate' &&
           vatIncludedProposal > 0 &&
           headRate >= 0) {
-        // 본사이익률 변경 → 공급가 재계산
         if (headRate > 0) {
           calculatedSupply = roundTo100(
             vatIncludedProposal / (1 - headRate / 100),
@@ -380,11 +376,9 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           );
         }
       } else if (trigger == 'supply' && supply > 0) {
-        // 시나리오 2: 공급가 직접 입력 → 본사이익률 역산
         calculatedSupply = supply;
 
         if (vatIncludedProposal > 0) {
-          // 본사이익률 = (공급가 - 제안단가) / 공급가 × 100
           calculatedHeadRate =
               ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
               100;
@@ -398,18 +392,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       } else if (trigger == 'storeRate' &&
           calculatedSupply > 0 &&
           storeRate >= 0) {
-        // 매장이익률 입력/변경 → 판매가 계산
         if (storeRate > 0) {
           calculatedSelling = roundTo100(
             calculatedSupply / (1 - storeRate / 100),
           );
         }
       } else if (trigger == 'selling' && selling > 0) {
-        // 시나리오 3: 판매가 직접 입력 → 역산
         calculatedSelling = selling;
 
         if (calculatedSupply > 0) {
-          // 매장이익률 = (판매가 - 공급가) / 판매가 × 100
           calculatedStoreRate =
               ((calculatedSelling - calculatedSupply) / calculatedSelling) *
               100;
@@ -425,7 +416,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 100;
           }
         } else if (storeRate > 0) {
-          // 매장이익률로 공급가 역산: 공급가 = 판매가 × (1 - 매장이익률/100)
           calculatedSupply = roundTo100(
             calculatedSelling * (1 - storeRate / 100),
           );
@@ -439,14 +429,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       }
 
       // 4. 항상 재계산되어야 하는 값들
-
-      // 본사이익률 = (공급가 - 제안단가) / 공급가 × 100
       if (calculatedSupply > 0 && vatIncludedProposal > 0) {
         calculatedHeadRate =
             ((calculatedSupply - vatIncludedProposal) / calculatedSupply) * 100;
       }
 
-      // 매장이익률 = (판매가 - 공급가) / 판매가 × 100
       if (calculatedSelling > 0 && calculatedSupply > 0) {
         calculatedStoreRate =
             ((calculatedSelling - calculatedSupply) / calculatedSelling) * 100;
@@ -469,7 +456,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         finalStoreProfitRate = 0;
       }
 
-      // 8. 차액 (입력된 판매가와 계산된 판매가의 차이)
+      // 8. 차액
       if (selling > 0) {
         priceDifference = calculatedSelling - selling;
       } else {
@@ -846,6 +833,7 @@ class ProductSearchSheet extends StatefulWidget {
 class _ProductSearchSheetState extends State<ProductSearchSheet> {
   final TextEditingController searchController = TextEditingController();
   List<Product> filteredProducts = [];
+  final FocusNode _focusNode = FocusNode();
 
   @override
   void initState() {
@@ -856,6 +844,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
   @override
   void dispose() {
     searchController.dispose();
+    _focusNode.dispose();
     super.dispose();
   }
 
@@ -876,100 +865,100 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return DraggableScrollableSheet(
-      initialChildSize: 0.7,
-      minChildSize: 0.5,
-      maxChildSize: 0.95,
-      builder: (context, scrollController) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            children: [
-              Container(
-                margin: const EdgeInsets.symmetric(vertical: 10),
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  children: [
-                    Text(
-                      widget.loadStatus,
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: widget.isLoaded ? Colors.green : Colors.orange,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: searchController,
-                      decoration: InputDecoration(
-                        hintText: '제품명, 바코드, POS 코드 검색',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 12,
-                        ),
-                      ),
-                      style: const TextStyle(fontSize: 16),
-                      autofocus: false,
-                      enableSuggestions: true,
-                      autocorrect: false,
-                      textInputAction: TextInputAction.search,
-                      keyboardType: TextInputType.text,
-                      onChanged: searchProducts,
-                      onSubmitted: (value) {
-                        FocusScope.of(context).unfocus();
-                      },
-                      onTapOutside: (event) {
-                        FocusScope.of(context).unfocus();
-                      },
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child:
-                    filteredProducts.isEmpty
-                        ? const Center(child: Text('검색 결과가 없습니다'))
-                        : ListView.builder(
-                          controller: scrollController,
-                          itemCount: filteredProducts.length,
-                          itemBuilder: (context, index) {
-                            Product product = filteredProducts[index];
-                            return ListTile(
-                              title: Text(product.name),
-                              subtitle: Text(
-                                '코드: ${product.code} | 바코드: ${product.barcode}\n'
-                                '매입: ${product.purchasePrice.toStringAsFixed(0)}원 | '
-                                '공급: ${product.supplyPrice.toStringAsFixed(0)}원 | '
-                                '판매: ${product.sellingPrice.toStringAsFixed(0)}원',
-                              ),
-                              trailing: Text('재고: ${product.stock}'),
-                              onTap: () {
-                                widget.onProductSelected(product);
-                                Navigator.pop(context);
-                              },
-                            );
-                          },
-                        ),
-              ),
-            ],
-          ),
-        );
+    return GestureDetector(
+      onTap: () {
+        _focusNode.unfocus();
       },
+      child: DraggableScrollableSheet(
+        initialChildSize: 0.7,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        builder: (context, scrollController) {
+          return Container(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Column(
+              children: [
+                Container(
+                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      Text(
+                        widget.loadStatus,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: widget.isLoaded ? Colors.green : Colors.orange,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      TextFormField(
+                        controller: searchController,
+                        focusNode: _focusNode,
+                        decoration: InputDecoration(
+                          hintText: '제품명, 바코드, POS 코드 검색',
+                          prefixIcon: const Icon(Icons.search),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 12,
+                          ),
+                        ),
+                        style: const TextStyle(fontSize: 16),
+                        textInputAction: TextInputAction.search,
+                        onChanged: searchProducts,
+                        onFieldSubmitted: (value) {
+                          _focusNode.unfocus();
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child:
+                      filteredProducts.isEmpty
+                          ? const Center(child: Text('검색 결과가 없습니다'))
+                          : ListView.builder(
+                            controller: scrollController,
+                            itemCount: filteredProducts.length,
+                            itemBuilder: (context, index) {
+                              Product product = filteredProducts[index];
+                              return ListTile(
+                                title: Text(product.name),
+                                subtitle: Text(
+                                  '코드: ${product.code} | 바코드: ${product.barcode}\n'
+                                  '매입: ${product.purchasePrice.toStringAsFixed(0)}원 | '
+                                  '공급: ${product.supplyPrice.toStringAsFixed(0)}원 | '
+                                  '판매: ${product.sellingPrice.toStringAsFixed(0)}원',
+                                ),
+                                trailing: Text('재고: ${product.stock}'),
+                                onTap: () {
+                                  _focusNode.unfocus();
+                                  widget.onProductSelected(product);
+                                  Navigator.pop(context);
+                                },
+                              );
+                            },
+                          ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
