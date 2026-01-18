@@ -181,92 +181,73 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     try {
       setState(() {
         loadStatus = '제품 데이터 로딩 중...';
+        loadError = null;
       });
 
-      final String csvString = await rootBundle.loadString(
-        'assets/products.csv',
-      );
+      String csvString = '';
+      try {
+        csvString = await rootBundle.loadString('assets/products.csv');
+      } catch (e) {
+        try {
+          csvString = await rootBundle.loadString('assets/assets/products.csv');
+        } catch (e2) {
+          throw Exception('CSV 파일을 찾을 수 없습니다: $e');
+        }
+      }
 
       if (csvString.isEmpty) {
-        throw Exception('CSV 파일이 비어있습니다');
+        setState(() {
+          loadStatus = '제품 데이터가 비어있습니다';
+          loadError = 'CSV 파일이 비어있습니다';
+          isProductsLoaded = true;
+        });
+        return;
       }
 
-      List<List<dynamic>> csvData = const CsvToListConverter().convert(
-        csvString,
-      );
+      List<List<dynamic>> csvTable = const CsvToListConverter(
+        eol: '\n',
+        fieldDelimiter: ',',
+      ).convert(csvString);
 
-      if (csvData.isEmpty) {
-        throw Exception('CSV 데이터가 없습니다');
+      debugPrint('CSV 로드 완료: ${csvTable.length}줄');
+
+      if (csvTable.isEmpty) {
+        setState(() {
+          loadStatus = '제품 데이터가 없습니다';
+          isProductsLoaded = true;
+        });
+        return;
       }
 
-      if (csvData.length < 2) {
-        throw Exception('CSV에 데이터 행이 없습니다 (헤더만 있음)');
-      }
-
+      // ✅ 새로운 CSV 구조: code,barcode,name,purchasePrice,supplyPrice,sellingPrice,stock
       List<Product> newProducts = [];
       int successCount = 0;
       int failCount = 0;
 
-      double parsePrice(dynamic value) {
-        if (value == null) return 0.0;
-        String strValue =
-            value
-                .toString()
-                .replaceAll(',', '')
-                .replaceAll('"', '')
-                .replaceAll(' ', '')
-                .replaceAll('원', '')
-                .trim();
+      for (int i = 1; i < csvTable.length; i++) {
+        List<dynamic> row = csvTable[i];
 
-        if (strValue.isEmpty) return 0.0;
-
-        if (strValue.contains('E') || strValue.contains('e')) {
-          try {
-            double result = double.parse(strValue);
-            if (result > 1000000000) return 0.0;
-            return result;
-          } catch (e) {
-            return 0.0;
-          }
+        // ✅ 최소 7개 열 필요 (간소화된 구조)
+        if (row.length < 7) {
+          failCount++;
+          debugPrint('행 $i: 열 개수 부족 (${row.length}개)');
+          continue;
         }
 
-        return double.tryParse(strValue) ?? 0.0;
-      }
-
-      int parseInt(dynamic value) {
-        if (value == null) return 0;
-        String strValue =
-            value
-                .toString()
-                .replaceAll(',', '')
-                .replaceAll('"', '')
-                .replaceAll(' ', '')
-                .trim();
-        if (strValue.isEmpty) return 0;
-        return int.tryParse(strValue) ?? 0;
-      }
-
-      for (int i = 1; i < csvData.length; i++) {
         try {
-          final row = csvData[i];
+          String code = row[0]?.toString().trim() ?? '';
+          String barcode = row[1]?.toString().trim() ?? '';
+          String name = row[2]?.toString().trim() ?? '';
 
-          if (row.length < 11) {
+          if (name.isEmpty) {
             failCount++;
             continue;
           }
 
-          String code = row.length > 0 ? (row[0]?.toString() ?? '') : '';
-          String barcode = row.length > 1 ? (row[1]?.toString() ?? '') : '';
-          String name = row.length > 7 ? (row[7]?.toString() ?? '') : '';
-          double purchasePrice = row.length > 8 ? parsePrice(row[8]) : 0.0;
-          double supplyPrice = row.length > 9 ? parsePrice(row[9]) : 0.0;
-          double sellingPrice = row.length > 10 ? parsePrice(row[10]) : 0.0;
-          int stock = row.length > 12 ? parseInt(row[12]) : 0;
-
-          if (name.trim().isEmpty) {
-            failCount++;
-            continue;
-          }
+          double purchasePrice = parsePrice(row[3]);
+          double supplyPrice = parsePrice(row[4]);
+          double sellingPrice = parsePrice(row[5]);
+          int stock = parseInt(row[6]);
 
           newProducts.add(
             Product(
@@ -279,10 +260,17 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               stock: stock,
             ),
           );
+
           successCount++;
+
+          if (i <= 3) {
+            debugPrint(
+              '행 $i: 코드=$code, 바코드=$barcode, 이름=$name, 매입=$purchasePrice, 공급=$supplyPrice, 판매=$sellingPrice, 재고=$stock',
+            );
+          }
         } catch (e) {
           failCount++;
-          continue;
+          debugPrint('행 $i 파싱 실패: $e');
         }
       }
 
@@ -292,13 +280,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         loadStatus =
             '$successCount개의 제품 로드 완료${failCount > 0 ? ' ($failCount개 실패)' : ''}';
       });
+
+      debugPrint('✅ 최종 로드 완료: $successCount개 성공, $failCount개 실패');
     } catch (e) {
       setState(() {
-        isProductsLoaded = false;
-        loadStatus = 'CSV 로드 실패: ${e.toString()}';
+        loadStatus = '제품 데이터 로드 실패';
+        loadError = e.toString();
+        isProductsLoaded = true;
       });
-
-      debugPrint('CSV 로드 에러: $e');
+      debugPrint('❌ CSV 로드 에러: $e');
     }
   }
 
