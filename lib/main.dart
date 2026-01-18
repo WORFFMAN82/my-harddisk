@@ -152,7 +152,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   List<Product> productList = [];
   bool isProductsLoaded = false;
-  String loadStatus = '제품 데이터 로딩 중...';
+  String loadStatus = '제품 데이터 로딩 시도 중...';
 
   List<CalculationHistory> historyList = [];
 
@@ -187,53 +187,101 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         'assets/products.csv',
       );
 
+      if (csvString.isEmpty) {
+        throw Exception('CSV 파일이 비어있습니다');
+      }
+
       List<List<dynamic>> csvData = const CsvToListConverter().convert(
         csvString,
       );
 
       if (csvData.isEmpty) {
-        setState(() {
-          loadStatus = 'CSV 파일이 비어있습니다';
-          isProductsLoaded = false;
-        });
-        return;
+        throw Exception('CSV 데이터가 없습니다');
+      }
+
+      if (csvData.length < 2) {
+        throw Exception('CSV에 데이터 행이 없습니다 (헤더만 있음)');
       }
 
       List<Product> newProducts = [];
+      int successCount = 0;
+      int failCount = 0;
+
+      double parsePrice(dynamic value) {
+        if (value == null) return 0.0;
+        String strValue =
+            value
+                .toString()
+                .replaceAll(',', '')
+                .replaceAll('"', '')
+                .replaceAll(' ', '')
+                .replaceAll('원', '')
+                .trim();
+
+        if (strValue.isEmpty) return 0.0;
+
+        if (strValue.contains('E') || strValue.contains('e')) {
+          try {
+            double result = double.parse(strValue);
+            if (result > 1000000000) return 0.0;
+            return result;
+          } catch (e) {
+            return 0.0;
+          }
+        }
+
+        return double.tryParse(strValue) ?? 0.0;
+      }
+
+      int parseInt(dynamic value) {
+        if (value == null) return 0;
+        String strValue =
+            value
+                .toString()
+                .replaceAll(',', '')
+                .replaceAll('"', '')
+                .replaceAll(' ', '')
+                .trim();
+        if (strValue.isEmpty) return 0;
+        return int.tryParse(strValue) ?? 0;
+      }
+
       for (int i = 1; i < csvData.length; i++) {
         try {
           final row = csvData[i];
+
           if (row.length < 11) {
-            // 13에서 11로 변경
             failCount++;
-            debugPrint('행 $i: 열 개수 부족 (${row.length}개)');
             continue;
           }
 
-          double parsePrice(dynamic value) {
-            if (value == null) return 0.0;
-            String strValue = value.toString().replaceAll(',', '').trim();
-            return double.tryParse(strValue) ?? 0.0;
-          }
+          String code = row.length > 0 ? (row[0]?.toString() ?? '') : '';
+          String barcode = row.length > 1 ? (row[1]?.toString() ?? '') : '';
+          String name = row.length > 7 ? (row[7]?.toString() ?? '') : '';
+          double purchasePrice = row.length > 8 ? parsePrice(row[8]) : 0.0;
+          double supplyPrice = row.length > 9 ? parsePrice(row[9]) : 0.0;
+          double sellingPrice = row.length > 10 ? parsePrice(row[10]) : 0.0;
+          int stock = row.length > 12 ? parseInt(row[12]) : 0;
 
-          int parseInt(dynamic value) {
-            if (value == null) return 0;
-            String strValue = value.toString().replaceAll(',', '').trim();
-            return int.tryParse(strValue) ?? 0;
+          if (name.trim().isEmpty) {
+            failCount++;
+            continue;
           }
 
           newProducts.add(
             Product(
-              code: row[0]?.toString() ?? '',
-              barcode: row[1]?.toString() ?? '',
-              name: row[7]?.toString() ?? '',
-              purchasePrice: parsePrice(row[8]),
-              supplyPrice: parsePrice(row[9]),
-              sellingPrice: parsePrice(row[10]),
-              stock: parseInt(row[12]),
+              code: code,
+              barcode: barcode,
+              name: name,
+              purchasePrice: purchasePrice,
+              supplyPrice: supplyPrice,
+              sellingPrice: sellingPrice,
+              stock: stock,
             ),
           );
+          successCount++;
         } catch (e) {
+          failCount++;
           continue;
         }
       }
@@ -241,13 +289,16 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       setState(() {
         productList = newProducts;
         isProductsLoaded = true;
-        loadStatus = '${newProducts.length}개의 제품 데이터 로드 완료';
+        loadStatus =
+            '$successCount개의 제품 로드 완료${failCount > 0 ? ' ($failCount개 실패)' : ''}';
       });
     } catch (e) {
       setState(() {
         isProductsLoaded = false;
-        loadStatus = 'CSV 로드 실패: $e';
+        loadStatus = 'CSV 로드 실패: ${e.toString()}';
       });
+
+      debugPrint('CSV 로드 에러: $e');
     }
   }
 
@@ -689,7 +740,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       body: SingleChildScrollView(
         child: Column(
           children: [
-            // 계산 결과 카드
             Container(
               margin: const EdgeInsets.all(16),
               padding: const EdgeInsets.all(20),
@@ -836,7 +886,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               ),
             ),
 
-            // 입력 카드
             Container(
               margin: const EdgeInsets.symmetric(horizontal: 16),
               padding: const EdgeInsets.all(20),
@@ -920,7 +969,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               ),
             ),
 
-            // 저장 버튼
             Container(
               margin: const EdgeInsets.all(16),
               width: double.infinity,
@@ -1024,7 +1072,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   }
 }
 
-// 🔥 개선된 검색 시트: 한 칸 입력 + 실시간 결과 표시
 class ProductSearchSheet extends StatefulWidget {
   final List<Product> products;
   final bool isProductsLoaded;
@@ -1075,7 +1122,6 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
       hasSearched = true;
     });
 
-    // 검색 결과 확인 메시지
     if (searchResults.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1114,9 +1160,8 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
               ),
               const SizedBox(height: 8),
 
-              // 로드 상태 표시
               Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color:
                       widget.isProductsLoaded
@@ -1134,7 +1179,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                   children: [
                     Icon(
                       widget.isProductsLoaded ? Icons.check_circle : Icons.info,
-                      size: 16,
+                      size: 18,
                       color:
                           widget.isProductsLoaded
                               ? Colors.green.shade700
@@ -1145,7 +1190,8 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                       child: Text(
                         widget.loadStatus,
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
                           color:
                               widget.isProductsLoaded
                                   ? Colors.green.shade700
@@ -1158,12 +1204,12 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
               ),
               const SizedBox(height: 16),
 
-              // 통합 검색 입력 필드
               TextField(
                 controller: searchController,
+                enabled: widget.isProductsLoaded,
                 decoration: InputDecoration(
                   labelText: '제품명, 바코드, 또는 POS코드',
-                  hintText: '예: 매드독, 8820250923178, WP17462',
+                  hintText: '예: 헌트, 8802965511240, WP00861',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
@@ -1186,11 +1232,10 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
               ),
               const SizedBox(height: 16),
 
-              // 검색 버튼
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  onPressed: searchProduct,
+                  onPressed: widget.isProductsLoaded ? searchProduct : null,
                   icon: const Icon(Icons.search),
                   label: const Text('검색'),
                   style: ElevatedButton.styleFrom(
@@ -1205,7 +1250,6 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
               ),
               const SizedBox(height: 16),
 
-              // 검색 결과 헤더
               if (hasSearched) ...[
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1241,7 +1285,6 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                 const Divider(height: 16),
               ],
 
-              // 검색 결과 리스트
               Expanded(
                 child:
                     !hasSearched
@@ -1332,7 +1375,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                                     ),
                                     if (product.code.isNotEmpty)
                                       Text(
-                                        '코드: ${product.code} | 바코드: ${product.barcode}',
+                                        '코드: ${product.code}',
                                         style: const TextStyle(
                                           fontSize: 10,
                                           color: Colors.grey,
