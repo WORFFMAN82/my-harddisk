@@ -110,8 +110,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   double calculatedSelling = 0;
   double calculatedHeadRate = 0;
   double calculatedStoreRate = 0;
-  double finalProfit = 0;
-  double finalProfitRate = 0;
+  double finalStoreProfit = 0; // 변경: 최종매장이익금
+  double finalStoreProfitRate = 0; // 변경: 최종매장이익률
   double priceDifference = 0;
 
   List<Product> productList = [];
@@ -198,7 +198,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         return;
       }
 
-      // 새로운 CSV 구조: code,barcode,name,purchasePrice,supplyPrice,sellingPrice,stock
       List<Product> newProducts = [];
       int successCount = 0;
       int failCount = 0;
@@ -324,52 +323,127 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double storeRate = double.tryParse(storeRateController.text) ?? 0;
 
     setState(() {
+      // 1. VAT 포함 제안단가 계산
       vatIncludedProposal = isVatIncluded ? proposal : proposal * 1.1;
 
-      if (trigger == 'proposal' || trigger == 'headRate') {
-        if (vatIncludedProposal > 0 && headRate > 0) {
-          calculatedSupply = roundTo100(
-            vatIncludedProposal * (1 + headRate / 100),
-          );
-        }
-      } else if (trigger == 'supply') {
-        if (supply > 0) {
-          calculatedSupply = supply;
-        }
-      }
+      // 2. 시나리오별 계산
+      if (trigger == 'proposal' && headRate > 0 && vatIncludedProposal > 0) {
+        // 시나리오 1: 제안단가 + 본사마진율 입력 → 공급가 계산
+        calculatedSupply = roundTo100(
+          vatIncludedProposal * (1 + headRate / 100),
+        );
 
-      if (trigger == 'proposal' ||
-          trigger == 'headRate' ||
-          trigger == 'storeRate' ||
-          trigger == 'supply') {
-        if (calculatedSupply > 0 && storeRate > 0) {
+        if (storeRate > 0) {
+          // 매장마진율도 있으면 판매가 계산
           calculatedSelling = roundTo100(
             calculatedSupply * (1 + storeRate / 100),
           );
         }
-      } else if (trigger == 'selling') {
-        if (selling > 0) {
-          calculatedSelling = selling;
+      } else if (trigger == 'headRate' &&
+          vatIncludedProposal > 0 &&
+          headRate > 0) {
+        // 본사마진율 변경 → 공급가 재계산
+        calculatedSupply = roundTo100(
+          vatIncludedProposal * (1 + headRate / 100),
+        );
+
+        if (storeRate > 0) {
+          calculatedSelling = roundTo100(
+            calculatedSupply * (1 + storeRate / 100),
+          );
+        }
+      } else if (trigger == 'supply' && supply > 0) {
+        // 시나리오 2: 공급가 직접 입력 → 본사마진율 역산
+        calculatedSupply = supply;
+
+        if (vatIncludedProposal > 0) {
+          calculatedHeadRate =
+              ((calculatedSupply - vatIncludedProposal) / vatIncludedProposal) *
+              100;
+        }
+
+        if (storeRate > 0) {
+          calculatedSelling = roundTo100(
+            calculatedSupply * (1 + storeRate / 100),
+          );
+        }
+      } else if (trigger == 'storeRate' &&
+          calculatedSupply > 0 &&
+          storeRate > 0) {
+        // 매장마진율 입력/변경 → 판매가 계산
+        calculatedSelling = roundTo100(
+          calculatedSupply * (1 + storeRate / 100),
+        );
+      } else if (trigger == 'selling' && selling > 0) {
+        // 시나리오 3: 판매가 직접 입력 → 역산
+        calculatedSelling = selling;
+
+        if (calculatedSupply > 0) {
+          // 공급가가 있으면 매장마진율 계산
+          calculatedStoreRate =
+              ((calculatedSelling - calculatedSupply) / calculatedSupply) * 100;
+        } else if (supply > 0) {
+          // 입력된 공급가로 계산
+          calculatedSupply = supply;
+          calculatedStoreRate =
+              ((calculatedSelling - calculatedSupply) / calculatedSupply) * 100;
+
+          if (vatIncludedProposal > 0) {
+            calculatedHeadRate =
+                ((calculatedSupply - vatIncludedProposal) /
+                    vatIncludedProposal) *
+                100;
+          }
+        } else if (storeRate > 0) {
+          // 매장마진율로 공급가 역산
+          calculatedSupply = roundTo100(
+            calculatedSelling / (1 + storeRate / 100),
+          );
+
+          if (vatIncludedProposal > 0) {
+            calculatedHeadRate =
+                ((calculatedSupply - vatIncludedProposal) /
+                    vatIncludedProposal) *
+                100;
+          }
         }
       }
 
+      // 3. 항상 재계산되어야 하는 값들
+
+      // 본사마진율 계산 (공급가와 제안단가가 모두 있을 때)
       if (calculatedSupply > 0 && vatIncludedProposal > 0) {
         calculatedHeadRate =
             ((calculatedSupply - vatIncludedProposal) / vatIncludedProposal) *
             100;
       }
 
+      // 매장마진율 계산 (판매가와 공급가가 모두 있을 때)
       if (calculatedSelling > 0 && calculatedSupply > 0) {
         calculatedStoreRate =
             ((calculatedSelling - calculatedSupply) / calculatedSupply) * 100;
       }
 
-      finalProfit = calculatedSelling - vatIncludedProposal;
-      if (vatIncludedProposal > 0) {
-        finalProfitRate = (finalProfit / vatIncludedProposal) * 100;
+      // 4. 최종매장이익금 = 판매가 - 공급가 (핵심 수정!)
+      if (calculatedSelling > 0 && calculatedSupply > 0) {
+        finalStoreProfit = calculatedSelling - calculatedSupply;
+      } else {
+        finalStoreProfit = 0;
       }
 
-      priceDifference = calculatedSelling - selling;
+      // 5. 최종매장이익률 = (판매가 - 공급가) / 판매가 * 100 (판매가 기준)
+      if (calculatedSelling > 0 && finalStoreProfit > 0) {
+        finalStoreProfitRate = (finalStoreProfit / calculatedSelling) * 100;
+      } else {
+        finalStoreProfitRate = 0;
+      }
+
+      // 6. 차액 (입력된 판매가와 계산된 판매가의 차이)
+      if (selling > 0) {
+        priceDifference = calculatedSelling - selling;
+      } else {
+        priceDifference = 0;
+      }
     });
 
     addToHistory();
@@ -556,8 +630,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               highlight: true,
             ),
             const Divider(thickness: 2),
-            _infoRow('실질 이익금', '${finalProfit.toStringAsFixed(0)}원'),
-            _infoRow('실질 이익률', '${finalProfitRate.toStringAsFixed(1)}%'),
+            _infoRow('최종매장이익금', '${finalStoreProfit.toStringAsFixed(0)}원'),
+            _infoRow('최종매장이익률', '${finalStoreProfitRate.toStringAsFixed(1)}%'),
             _infoRow('차액', '${priceDifference.toStringAsFixed(0)}원'),
           ],
         ),
