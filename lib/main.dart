@@ -261,6 +261,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   void calculate({String? trigger}) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
+    // VAT 포함 여부에 따라 원가 계산 (한 번만!)
     double cost = isVatIncluded ? proposal : proposal * 1.1;
     double headRate = double.tryParse(headMarginRateController.text) ?? 0;
     double storeRate = double.tryParse(storeMarginRateController.text) ?? 0;
@@ -273,17 +274,20 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
     setState(() {
       if (trigger == "supply") {
+        // 지점공급가 입력 → 본사 마진율 계산
         if (supply > 0 && cost > 0) {
           headMarginRateController.text = ((supply - cost) / supply * 100)
               .toStringAsFixed(1);
         }
       } else if (trigger == "selling") {
+        // 최종 판매가 입력 → 매장 이익률 계산
         if (selling > 0 && supply > 0) {
           double profit = selling - supply - shipPerItem;
           storeMarginRateController.text = (profit / selling * 100)
               .toStringAsFixed(1);
         }
       } else if (trigger == "headRate") {
+        // 본사 마진율 입력 → 지점공급가 계산
         if (headRate < 100 && cost > 0) {
           supply = cost / (1 - headRate / 100);
           if (isRoundTo100) {
@@ -292,6 +296,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           supplyPriceController.text = supply.toStringAsFixed(0);
         }
       } else if (trigger == "storeRate") {
+        // 매장 이익률 입력 → 최종 판매가 계산
         if (storeRate < 100 && supply > 0) {
           selling = (supply + shipPerItem) / (1 - storeRate / 100);
           if (isRoundTo100) {
@@ -300,6 +305,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           sellingPriceController.text = selling.toStringAsFixed(0);
         }
       } else {
+        // 택배비/입수량 변경 시: 이익률만 재계산
         if (selling > 0 && supply > 0) {
           double profit = selling - supply - shipPerItem;
           storeMarginRateController.text = (profit / selling * 100)
@@ -529,6 +535,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   @override
   Widget build(BuildContext context) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
+    // VAT 포함 단가 계산 (정보 표시용)
     double vatIncludedProposal = isVatIncluded ? proposal : proposal * 1.1;
     double headRate = double.tryParse(headMarginRateController.text) ?? 0;
     double storeRate = double.tryParse(storeMarginRateController.text) ?? 0;
