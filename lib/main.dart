@@ -9,7 +9,7 @@ class AnyPriceApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '다계산해줄지니',
+      title: '다계산해줄지니어스',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -89,20 +89,20 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     setState(() {
       if (trigger == "supply") {
         // 3. 지점공급가 직접 입력 → 본사 마진율 계산
-        if (supply > 0) {
+        if (supply > 0 && cost > 0) {
           headMarginRateController.text = ((supply - cost) / supply * 100)
               .toStringAsFixed(1);
         }
       } else if (trigger == "selling") {
         // 5. 최종 판매가 직접 입력 → 매장 이익률 계산
-        if (selling > 0) {
+        if (selling > 0 && supply > 0) {
           double profit = selling - supply - shipPerItem;
           storeMarginRateController.text = (profit / selling * 100)
               .toStringAsFixed(1);
         }
       } else if (trigger == "headRate") {
         // 2. 본사 마진율 입력 → 지점공급가 계산
-        if (headRate < 100) {
+        if (headRate < 100 && cost > 0) {
           supply = cost / (1 - headRate / 100);
           if (isRoundTo100) {
             supply = (supply / 100).round() * 100.0;
@@ -111,7 +111,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         }
       } else if (trigger == "storeRate") {
         // 4. 매장 이익률 입력 → 최종 판매가 계산
-        if (storeRate < 100) {
+        if (storeRate < 100 && supply > 0) {
           selling = (supply + shipPerItem) / (1 - storeRate / 100);
           if (isRoundTo100) {
             selling = (selling / 100).round() * 100.0;
@@ -120,7 +120,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         }
       } else {
         // 택배비 / 입수량 변경 시: 판매가 고정, 이익률만 재계산
-        if (selling > 0) {
+        if (selling > 0 && supply > 0) {
           double profit = selling - supply - shipPerItem;
           storeMarginRateController.text = (profit / selling * 100)
               .toStringAsFixed(1);
@@ -131,16 +131,20 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   @override
   Widget build(BuildContext context) {
-    double s = double.tryParse(supplyPriceController.text) ?? 0;
-    double f = double.tryParse(sellingPriceController.text) ?? 0;
+    double proposal = double.tryParse(proposalController.text) ?? 0;
+    double headRate = double.tryParse(headMarginRateController.text) ?? 0;
+    double storeRate = double.tryParse(storeMarginRateController.text) ?? 0;
+    double supply = double.tryParse(supplyPriceController.text) ?? 0;
+    double selling = double.tryParse(sellingPriceController.text) ?? 0;
     double shipTotal = double.tryParse(shippingController.text) ?? 0;
     double qty = double.tryParse(boxQtyController.text) ?? 1;
     if (qty <= 0) qty = 1;
     double shipPerItem = shipTotal / qty;
 
-    double finalProfit = f - s - shipPerItem; // 실질 이익금
-    double finalRate = f > 0 ? (finalProfit / f * 100) : 0; // 실질 이익률
-    double diff = f - s; // 판매가 - 공급가 차액
+    double finalProfit = selling - supply - shipPerItem; // 실질 이익금
+    double finalRate =
+        selling > 0 ? (finalProfit / selling * 100) : 0; // 실질 이익률
+    double diff = selling - supply; // 판매가 - 공급가 차액
 
     return Scaffold(
       appBar: AppBar(
@@ -149,11 +153,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         foregroundColor: Colors.white,
         centerTitle: true,
         title: const Text(
-          '다계산해줄지니',
+          '다계산해줄지니어스',
           style: TextStyle(
             fontWeight: FontWeight.w900,
-            fontSize: 22,
-            letterSpacing: 2.0, // 영화 포스터 느낌
+            fontSize: 20,
+            letterSpacing: 1.5,
           ),
         ),
       ),
@@ -164,7 +168,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           children: [
             _buildThemeSelector(),
             const SizedBox(height: 16),
-            _buildSummaryCard(finalRate, finalProfit, diff),
+            _buildInfoCard(
+              proposal,
+              headRate,
+              supply,
+              storeRate,
+              selling,
+              finalProfit,
+              diff,
+            ),
             const SizedBox(height: 20),
             _buildInputCard(),
           ],
@@ -212,8 +224,16 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     );
   }
 
-  // 요약 카드 (이익률, 이익금, 차액)
-  Widget _buildSummaryCard(double rate, double profit, double diff) {
+  // 정보 표시 카드 (입력과 완전히 분리)
+  Widget _buildInfoCard(
+    double proposal,
+    double headRate,
+    double supply,
+    double storeRate,
+    double selling,
+    double profit,
+    double diff,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -234,31 +254,96 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            "요약",
-            style: TextStyle(color: Colors.white70, fontSize: 11),
+          Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: Colors.white.withOpacity(0.9),
+                size: 20,
+              ),
+              const SizedBox(width: 6),
+              const Text(
+                "계산 결과",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
+          ),
+          const Divider(color: Colors.white54, height: 20),
+
+          _buildInfoRow(
+            "제안단가",
+            proposal > 0
+                ? "${proposal.toStringAsFixed(0)}원 ${isVatIncluded ? '(VAT포함)' : '(VAT별도)'}"
+                : "-",
           ),
           const SizedBox(height: 8),
-          Text(
-            "매장 이익률 ${rate.toStringAsFixed(1)}%",
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
+
+          _buildInfoRow(
+            "본사 마진율",
+            headRate > 0 ? "${headRate.toStringAsFixed(1)}%" : "-",
           ),
-          const SizedBox(height: 6),
-          Text(
-            "실질 이익금 (택배비 반영): ${profit.toStringAsFixed(0)}원",
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+          const SizedBox(height: 8),
+
+          _buildInfoRow(
+            "지점공급가",
+            supply > 0 ? "${supply.toStringAsFixed(0)}원" : "-",
           ),
-          const SizedBox(height: 4),
-          Text(
-            "판매가 - 공급가 차액: ${diff.toStringAsFixed(0)}원",
-            style: const TextStyle(color: Colors.white, fontSize: 13),
+          const SizedBox(height: 8),
+
+          _buildInfoRow(
+            "매장 이익률",
+            storeRate > 0 ? "${storeRate.toStringAsFixed(1)}%" : "-",
+          ),
+          const SizedBox(height: 8),
+
+          _buildInfoRow(
+            "최종 판매가",
+            selling > 0 ? "${selling.toStringAsFixed(0)}원" : "-",
+          ),
+
+          const Divider(color: Colors.white54, height: 20),
+
+          _buildInfoRow(
+            "실질 이익금 (택배비 반영)",
+            selling > 0 && supply > 0 ? "${profit.toStringAsFixed(0)}원" : "-",
+            isBold: true,
+          ),
+          const SizedBox(height: 8),
+
+          _buildInfoRow(
+            "판매가 - 공급가 차액",
+            selling > 0 && supply > 0 ? "${diff.toStringAsFixed(0)}원" : "-",
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildInfoRow(String label, String value, {bool isBold = false}) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            color: Colors.white.withOpacity(0.95),
+            fontSize: 13,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+          ),
+        ),
+        Text(
+          value,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: isBold ? 16 : 14,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 
@@ -280,9 +365,25 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              Icon(Icons.edit_note, color: themeColor, size: 20),
+              const SizedBox(width: 6),
+              const Text(
+                "입력 영역",
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
           const Text(
             "기본 정보",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 12),
 
@@ -316,7 +417,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           const SizedBox(height: 18),
           const Text(
             "본사 · 지점 조건",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 10),
 
@@ -347,7 +452,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           const SizedBox(height: 18),
           const Text(
             "매장 판매 조건",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 10),
 
@@ -378,7 +487,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           const SizedBox(height: 18),
           const Text(
             "물류 조건",
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.bold,
+              color: Colors.black87,
+            ),
           ),
           const SizedBox(height: 10),
 
