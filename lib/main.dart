@@ -53,6 +53,8 @@ class CalculationHistory {
   final double headRate;
   final double storeRate;
   final bool isVatIncluded;
+  final double shippingCost;
+  final int quantity;
 
   CalculationHistory({
     required this.timestamp,
@@ -62,6 +64,8 @@ class CalculationHistory {
     required this.headRate,
     required this.storeRate,
     required this.isVatIncluded,
+    this.shippingCost = 0,
+    this.quantity = 1,
   });
 
   Map<String, dynamic> toJson() => {
@@ -72,6 +76,8 @@ class CalculationHistory {
     'headRate': headRate,
     'storeRate': storeRate,
     'isVatIncluded': isVatIncluded,
+    'shippingCost': shippingCost,
+    'quantity': quantity,
   };
 
   factory CalculationHistory.fromJson(Map<String, dynamic> json) {
@@ -83,6 +89,8 @@ class CalculationHistory {
       headRate: json['headRate'],
       storeRate: json['storeRate'],
       isVatIncluded: json['isVatIncluded'] ?? false,
+      shippingCost: json['shippingCost'] ?? 0,
+      quantity: json['quantity'] ?? 1,
     );
   }
 }
@@ -101,6 +109,9 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   final TextEditingController headRateController = TextEditingController();
   final TextEditingController storeRateController = TextEditingController();
   final TextEditingController shipController = TextEditingController();
+  final TextEditingController quantityController = TextEditingController(
+    text: '1',
+  );
 
   bool isVatIncluded = false;
   bool isRoundTo100 = true;
@@ -110,8 +121,10 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   double calculatedSelling = 0;
   double calculatedHeadRate = 0;
   double calculatedStoreRate = 0;
-  double finalStoreProfit = 0; // 변경: 최종매장이익금
-  double finalStoreProfitRate = 0; // 변경: 최종매장이익률
+  double shippingCostPerUnit = 0;
+  double actualSellingPrice = 0; // 택배비 제외한 실제 판매가
+  double finalStoreProfit = 0;
+  double finalStoreProfitRate = 0;
   double priceDifference = 0;
 
   List<Product> productList = [];
@@ -140,10 +153,10 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     headRateController.dispose();
     storeRateController.dispose();
     shipController.dispose();
+    quantityController.dispose();
     super.dispose();
   }
 
-  // 헬퍼 함수들
   double parsePrice(dynamic value) {
     if (value == null) return 0.0;
     String str = value.toString().trim().replaceAll(',', '');
@@ -289,6 +302,9 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   void addToHistory() {
     if (vatIncludedProposal > 0) {
+      double shipCost = double.tryParse(shipController.text) ?? 0;
+      int qty = int.tryParse(quantityController.text) ?? 1;
+
       CalculationHistory newEntry = CalculationHistory(
         timestamp: DateTime.now(),
         proposal: vatIncludedProposal,
@@ -297,6 +313,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         headRate: calculatedHeadRate,
         storeRate: calculatedStoreRate,
         isVatIncluded: isVatIncluded,
+        shippingCost: shipCost,
+        quantity: qty,
       );
       setState(() {
         historyList.insert(0, newEntry);
@@ -321,124 +339,137 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     double selling = double.tryParse(sellingController.text) ?? 0;
     double headRate = double.tryParse(headRateController.text) ?? 0;
     double storeRate = double.tryParse(storeRateController.text) ?? 0;
+    double shippingCost = double.tryParse(shipController.text) ?? 0;
+    int quantity = int.tryParse(quantityController.text) ?? 1;
+    if (quantity == 0) quantity = 1;
 
     setState(() {
       // 1. VAT 포함 제안단가 계산
       vatIncludedProposal = isVatIncluded ? proposal : proposal * 1.1;
 
-      // 2. 시나리오별 계산
+      // 2. 개당 택배비 계산
+      shippingCostPerUnit = shippingCost / quantity;
+
+      // 3. 시나리오별 계산
       if (trigger == 'proposal' && headRate > 0 && vatIncludedProposal > 0) {
-        // 시나리오 1: 제안단가 + 본사마진율 입력 → 공급가 계산
+        // 시나리오 1: 제안단가 + 본사이익률 → 공급가 계산
+        // 공급가 = 제안단가 / (1 - 본사이익률/100)
         calculatedSupply = roundTo100(
-          vatIncludedProposal * (1 + headRate / 100),
+          vatIncludedProposal / (1 - headRate / 100),
         );
 
         if (storeRate > 0) {
-          // 매장마진율도 있으면 판매가 계산
+          // 판매가 = 공급가 / (1 - 매장이익률/100)
           calculatedSelling = roundTo100(
-            calculatedSupply * (1 + storeRate / 100),
+            calculatedSupply / (1 - storeRate / 100),
           );
         }
       } else if (trigger == 'headRate' &&
           vatIncludedProposal > 0 &&
-          headRate > 0) {
-        // 본사마진율 변경 → 공급가 재계산
-        calculatedSupply = roundTo100(
-          vatIncludedProposal * (1 + headRate / 100),
-        );
+          headRate >= 0) {
+        // 본사이익률 변경 → 공급가 재계산
+        if (headRate > 0) {
+          calculatedSupply = roundTo100(
+            vatIncludedProposal / (1 - headRate / 100),
+          );
+        }
 
-        if (storeRate > 0) {
+        if (storeRate > 0 && calculatedSupply > 0) {
           calculatedSelling = roundTo100(
-            calculatedSupply * (1 + storeRate / 100),
+            calculatedSupply / (1 - storeRate / 100),
           );
         }
       } else if (trigger == 'supply' && supply > 0) {
-        // 시나리오 2: 공급가 직접 입력 → 본사마진율 역산
+        // 시나리오 2: 공급가 직접 입력 → 본사이익률 역산
         calculatedSupply = supply;
 
         if (vatIncludedProposal > 0) {
+          // 본사이익률 = (공급가 - 제안단가) / 공급가 × 100
           calculatedHeadRate =
-              ((calculatedSupply - vatIncludedProposal) / vatIncludedProposal) *
+              ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
               100;
         }
 
         if (storeRate > 0) {
           calculatedSelling = roundTo100(
-            calculatedSupply * (1 + storeRate / 100),
+            calculatedSupply / (1 - storeRate / 100),
           );
         }
       } else if (trigger == 'storeRate' &&
           calculatedSupply > 0 &&
-          storeRate > 0) {
-        // 매장마진율 입력/변경 → 판매가 계산
-        calculatedSelling = roundTo100(
-          calculatedSupply * (1 + storeRate / 100),
-        );
+          storeRate >= 0) {
+        // 매장이익률 입력/변경 → 판매가 계산
+        if (storeRate > 0) {
+          calculatedSelling = roundTo100(
+            calculatedSupply / (1 - storeRate / 100),
+          );
+        }
       } else if (trigger == 'selling' && selling > 0) {
         // 시나리오 3: 판매가 직접 입력 → 역산
         calculatedSelling = selling;
 
         if (calculatedSupply > 0) {
-          // 공급가가 있으면 매장마진율 계산
+          // 매장이익률 = (판매가 - 공급가) / 판매가 × 100
           calculatedStoreRate =
-              ((calculatedSelling - calculatedSupply) / calculatedSupply) * 100;
+              ((calculatedSelling - calculatedSupply) / calculatedSelling) *
+              100;
         } else if (supply > 0) {
-          // 입력된 공급가로 계산
           calculatedSupply = supply;
           calculatedStoreRate =
-              ((calculatedSelling - calculatedSupply) / calculatedSupply) * 100;
+              ((calculatedSelling - calculatedSupply) / calculatedSelling) *
+              100;
 
           if (vatIncludedProposal > 0) {
             calculatedHeadRate =
-                ((calculatedSupply - vatIncludedProposal) /
-                    vatIncludedProposal) *
+                ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
                 100;
           }
         } else if (storeRate > 0) {
-          // 매장마진율로 공급가 역산
+          // 매장이익률로 공급가 역산: 공급가 = 판매가 × (1 - 매장이익률/100)
           calculatedSupply = roundTo100(
-            calculatedSelling / (1 + storeRate / 100),
+            calculatedSelling * (1 - storeRate / 100),
           );
 
           if (vatIncludedProposal > 0) {
             calculatedHeadRate =
-                ((calculatedSupply - vatIncludedProposal) /
-                    vatIncludedProposal) *
+                ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
                 100;
           }
         }
       }
 
-      // 3. 항상 재계산되어야 하는 값들
+      // 4. 항상 재계산되어야 하는 값들
 
-      // 본사마진율 계산 (공급가와 제안단가가 모두 있을 때)
+      // 본사이익률 = (공급가 - 제안단가) / 공급가 × 100
       if (calculatedSupply > 0 && vatIncludedProposal > 0) {
         calculatedHeadRate =
-            ((calculatedSupply - vatIncludedProposal) / vatIncludedProposal) *
-            100;
+            ((calculatedSupply - vatIncludedProposal) / calculatedSupply) * 100;
       }
 
-      // 매장마진율 계산 (판매가와 공급가가 모두 있을 때)
+      // 매장이익률 = (판매가 - 공급가) / 판매가 × 100
       if (calculatedSelling > 0 && calculatedSupply > 0) {
         calculatedStoreRate =
-            ((calculatedSelling - calculatedSupply) / calculatedSupply) * 100;
+            ((calculatedSelling - calculatedSupply) / calculatedSelling) * 100;
       }
 
-      // 4. 최종매장이익금 = 판매가 - 공급가 (핵심 수정!)
-      if (calculatedSelling > 0 && calculatedSupply > 0) {
-        finalStoreProfit = calculatedSelling - calculatedSupply;
+      // 5. 실제 판매가 (택배비 제외)
+      actualSellingPrice = calculatedSelling - shippingCostPerUnit;
+
+      // 6. 최종매장이익금 = 실제판매가 - 공급가
+      if (actualSellingPrice > 0 && calculatedSupply > 0) {
+        finalStoreProfit = actualSellingPrice - calculatedSupply;
       } else {
         finalStoreProfit = 0;
       }
 
-      // 5. 최종매장이익률 = (판매가 - 공급가) / 판매가 * 100 (판매가 기준)
-      if (calculatedSelling > 0 && finalStoreProfit > 0) {
-        finalStoreProfitRate = (finalStoreProfit / calculatedSelling) * 100;
+      // 7. 최종매장이익률 = (실제판매가 - 공급가) / 실제판매가 × 100
+      if (actualSellingPrice > 0 && finalStoreProfit > 0) {
+        finalStoreProfitRate = (finalStoreProfit / actualSellingPrice) * 100;
       } else {
         finalStoreProfitRate = 0;
       }
 
-      // 6. 차액 (입력된 판매가와 계산된 판매가의 차이)
+      // 8. 차액 (입력된 판매가와 계산된 판매가의 차이)
       if (selling > 0) {
         priceDifference = calculatedSelling - selling;
       } else {
@@ -480,6 +511,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                           sellingController.text = product.sellingPrice
                               .toStringAsFixed(0);
                         });
+                        calculate('supply');
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('${product.name} 선택됨'),
@@ -621,18 +653,28 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               '제안단가 (VAT포함)',
               '${vatIncludedProposal.toStringAsFixed(0)}원',
             ),
-            _infoRow('본사마진율', '${calculatedHeadRate.toStringAsFixed(1)}%'),
+            _infoRow('본사이익률', '${calculatedHeadRate.toStringAsFixed(1)}%'),
             _infoRow('공급가', '${calculatedSupply.toStringAsFixed(0)}원'),
-            _infoRow('매장마진율', '${calculatedStoreRate.toStringAsFixed(1)}%'),
+            _infoRow('매장이익률', '${calculatedStoreRate.toStringAsFixed(1)}%'),
             _infoRow(
-              '최종판매가',
+              '판매가',
               '${calculatedSelling.toStringAsFixed(0)}원',
               highlight: true,
             ),
+            if (shippingCostPerUnit > 0) ...[
+              const Divider(thickness: 1),
+              _infoRow('개당 택배비', '${shippingCostPerUnit.toStringAsFixed(0)}원'),
+              _infoRow(
+                '실제판매가',
+                '${actualSellingPrice.toStringAsFixed(0)}원',
+                highlight: true,
+              ),
+            ],
             const Divider(thickness: 2),
             _infoRow('최종매장이익금', '${finalStoreProfit.toStringAsFixed(0)}원'),
             _infoRow('최종매장이익률', '${finalStoreProfitRate.toStringAsFixed(1)}%'),
-            _infoRow('차액', '${priceDifference.toStringAsFixed(0)}원'),
+            if (priceDifference != 0)
+              _infoRow('차액', '${priceDifference.toStringAsFixed(0)}원'),
           ],
         ),
       ),
@@ -710,22 +752,42 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               () => calculate('proposal'),
             ),
             _buildTextField(
-              '본사 마진율 (%)',
+              '본사 이익률 (%)',
               headRateController,
               () => calculate('headRate'),
             ),
             _buildTextField('공급가', supplyController, () => calculate('supply')),
             _buildTextField(
-              '매장 마진율 (%)',
+              '매장 이익률 (%)',
               storeRateController,
               () => calculate('storeRate'),
             ),
             _buildTextField(
-              '최종 판매가',
+              '판매가',
               sellingController,
               () => calculate('selling'),
             ),
-            _buildTextField('배송비', shipController, () => calculate('ship')),
+            Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: _buildTextField(
+                    '택배비',
+                    shipController,
+                    () => calculate('ship'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 1,
+                  child: _buildTextField(
+                    '수량',
+                    quantityController,
+                    () => calculate('quantity'),
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
       ),
