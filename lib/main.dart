@@ -805,6 +805,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         controller: controller,
         keyboardType: TextInputType.number,
         inputFormatters: [numFormatter],
+        textInputAction: TextInputAction.done,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
@@ -812,6 +813,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           fillColor: Colors.grey[100],
         ),
         onChanged: (value) => onChanged(),
+        onSubmitted: (value) {
+          FocusScope.of(context).unfocus();
+          onChanged();
+        },
+        onTapOutside: (event) {
+          FocusScope.of(context).unfocus();
+        },
       ),
     );
   }
@@ -843,6 +851,12 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
   void initState() {
     super.initState();
     filteredProducts = widget.products;
+  }
+
+  @override
+  void dispose() {
+    searchController.dispose();
+    super.dispose();
   }
 
   void searchProducts(String query) {
@@ -904,8 +918,24 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
                       ),
+                      style: const TextStyle(fontSize: 16),
+                      autofocus: false,
+                      enableSuggestions: true,
+                      autocorrect: false,
+                      textInputAction: TextInputAction.search,
+                      keyboardType: TextInputType.text,
                       onChanged: searchProducts,
+                      onSubmitted: (value) {
+                        FocusScope.of(context).unfocus();
+                      },
+                      onTapOutside: (event) {
+                        FocusScope.of(context).unfocus();
+                      },
                     ),
                   ],
                 ),
