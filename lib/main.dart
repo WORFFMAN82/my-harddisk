@@ -17,7 +17,7 @@ class AnyPriceApp extends StatelessWidget {
       title: '다계산해줄지니어스',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.pink),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.grey),
         useMaterial3: true,
         fontFamily: 'Pretendard',
       ),
@@ -150,22 +150,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   bool isVatIncluded = false;
   bool isRoundTo100 = false;
 
-  Color themeColor = Colors.pink;
-  final List<Color> themeColors = [
-    Colors.pink,
-    Colors.purple,
-    Colors.deepPurple,
-    Colors.indigo,
-    Colors.blue,
-    Colors.teal,
-    Colors.green,
-    Colors.orange,
-    Colors.deepOrange,
-    Colors.brown,
-  ];
-
   List<Product> productList = [];
-  bool isLoadingProducts = true;
+  bool isProductsLoaded = false; // CSV 로드 완료 여부
 
   List<CalculationHistory> historyList = [];
 
@@ -175,7 +161,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   void initState() {
     super.initState();
     loadHistory();
-    loadProductsFromAssets(); // 🔥 자동으로 CSV 로드
+    loadProductsFromAssets(); // 백그라운드에서 조용히 로드
   }
 
   @override
@@ -190,7 +176,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     super.dispose();
   }
 
-  // 🔥 CSV 자동 로드 함수
+  // CSV 자동 로드 (조용히 백그라운드에서)
   Future<void> loadProductsFromAssets() async {
     try {
       final String csvString = await rootBundle.loadString(
@@ -201,9 +187,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         csvString,
       );
 
-      if (csvData.isEmpty) {
-        throw Exception('CSV 파일이 비어있습니다.');
-      }
+      if (csvData.isEmpty) return;
 
       List<Product> newProducts = [];
       for (int i = 1; i < csvData.length; i++) {
@@ -241,35 +225,16 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
       setState(() {
         productList = newProducts;
-        isLoadingProducts = false;
+        isProductsLoaded = true;
       });
 
-      if (mounted && newProducts.isNotEmpty) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${newProducts.length}개의 제품 데이터가 로드되었습니다'),
-            duration: const Duration(seconds: 2),
-          ),
-        );
-      }
+      // 조용히 로드 (메시지 없음)
     } catch (e) {
-      setState(() => isLoadingProducts = false);
-      if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('제품 데이터 로드 실패: $e')));
-      }
+      setState(() => isProductsLoaded = false);
     }
   }
 
   void showProductSearch() {
-    if (productList.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('제품 데이터를 불러오는 중입니다. 잠시만 기다려주세요.')),
-      );
-      return;
-    }
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -279,7 +244,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       builder:
           (context) => ProductSearchSheet(
             products: productList,
-            themeColor: themeColor,
+            isProductsLoaded: isProductsLoaded,
             onProductSelected: (product) {
               applyProduct(product);
               Navigator.pop(context);
@@ -290,11 +255,10 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   void applyProduct(Product product) {
     setState(() {
-      // VAT 포함 여부 확인: 제품의 매입가가 VAT 포함인지 체크
       proposalController.text = product.purchasePrice.toStringAsFixed(0);
       supplyPriceController.text = product.supplyPrice.toStringAsFixed(0);
       sellingPriceController.text = product.sellingPrice.toStringAsFixed(0);
-      isVatIncluded = true; // 제품 DB 가격은 기본적으로 VAT 포함으로 가정
+      isVatIncluded = true;
 
       if (product.supplyPrice > 0 && product.purchasePrice > 0) {
         double headRate =
@@ -321,7 +285,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   void calculate({required String trigger}) {
     setState(() {
       double proposal = double.tryParse(proposalController.text) ?? 0;
-      // VAT 미포함이면 *1.1, 포함이면 그대로
       double cost = isVatIncluded ? proposal : proposal * 1.1;
 
       double headRate = double.tryParse(headMarginRateController.text) ?? 0;
@@ -563,17 +526,15 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                                               vertical: 2,
                                             ),
                                             decoration: BoxDecoration(
-                                              color: themeColor.withOpacity(
-                                                0.1,
-                                              ),
+                                              color: Colors.grey.shade200,
                                               borderRadius:
                                                   BorderRadius.circular(4),
                                             ),
                                             child: Text(
                                               history.memo,
-                                              style: TextStyle(
+                                              style: const TextStyle(
                                                 fontSize: 10,
-                                                color: themeColor,
+                                                color: Colors.black87,
                                               ),
                                             ),
                                           ),
@@ -634,7 +595,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   @override
   Widget build(BuildContext context) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
-    // VAT 미포함이면 *1.1, 포함이면 그대로
     double vatIncludedProposal = isVatIncluded ? proposal : proposal * 1.1;
 
     double headRate = double.tryParse(headMarginRateController.text) ?? 0;
@@ -651,7 +611,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     return Scaffold(
       appBar: AppBar(
         elevation: 0,
-        backgroundColor: themeColor,
+        backgroundColor: Colors.grey.shade800,
         foregroundColor: Colors.white,
         centerTitle: true,
         title: const Text(
@@ -704,473 +664,313 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           ),
         ],
       ),
-      body:
-          isLoadingProducts
-              ? const Center(child: CircularProgressIndicator())
-              : SingleChildScrollView(
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  children: [
-                    if (productList.isNotEmpty)
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        margin: const EdgeInsets.only(bottom: 14),
-                        decoration: BoxDecoration(
-                          color: Colors.green.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: Colors.green.shade200),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.check_circle,
-                              color: Colors.green.shade700,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 8),
-                            Text(
-                              '${productList.length}개의 제품 데이터가 로드되었습니다',
-                              style: TextStyle(
-                                color: Colors.green.shade700,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ],
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // 계산 결과 카드
+            Container(
+              margin: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.pink.shade50, Colors.pink.shade100],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.pink.withOpacity(0.2),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.calculate, color: Colors.pink, size: 24),
+                      SizedBox(width: 8),
+                      Text(
+                        '계산결과',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.pink,
                         ),
                       ),
-                    buildThemeSelector(),
-                    const SizedBox(height: 14),
-                    buildInfoCard(
-                      vatIncludedProposal,
-                      headRate,
-                      supply,
-                      storeRate,
-                      selling,
-                      shipTotal,
-                      qty,
-                      shipPerItem,
-                      finalProfit,
-                      finalRate,
-                    ),
-                    const SizedBox(height: 14),
-                    buildInputCard(),
-                    const SizedBox(height: 16),
-                    buildSaveButton(),
-                    const SizedBox(height: 40),
-                  ],
-                ),
-              ),
-    );
-  }
-
-  Widget buildThemeSelector() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '테마 색상',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.bold,
-              color: Colors.black54,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children:
-                  themeColors
-                      .map(
-                        (color) => GestureDetector(
-                          onTap: () => setState(() => themeColor = color),
-                          child: Container(
-                            margin: const EdgeInsets.only(right: 10),
-                            width: themeColor == color ? 36 : 32,
-                            height: themeColor == color ? 36 : 32,
-                            decoration: BoxDecoration(
-                              color: color,
-                              shape: BoxShape.circle,
-                              border:
-                                  themeColor == color
-                                      ? Border.all(
-                                        color: Colors.black,
-                                        width: 2.5,
-                                      )
-                                      : null,
-                            ),
-                          ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  _buildResultRow(
+                    '제안단가',
+                    vatIncludedProposal > 0
+                        ? '${vatIncludedProposal.toStringAsFixed(0)}원 (VAT포함)'
+                        : '-',
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildResultRow(
+                          '지점공급가',
+                          supply > 0 ? '${supply.toStringAsFixed(0)}원' : '-',
+                          isSmall: true,
                         ),
-                      )
-                      .toList(),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildResultRow(
+                          '본사이익률',
+                          headRate > 0
+                              ? '${headRate.toStringAsFixed(1)}%'
+                              : '-',
+                          isSmall: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildResultRow(
+                          '매장판매가',
+                          selling > 0 ? '${selling.toStringAsFixed(0)}원' : '-',
+                          isSmall: true,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildResultRow(
+                          '매장이익률',
+                          storeRate > 0
+                              ? '${storeRate.toStringAsFixed(1)}%'
+                              : '-',
+                          isSmall: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildResultRow(
+                          '택배비',
+                          shipTotal > 0
+                              ? '${shipTotal.toStringAsFixed(0)}원'
+                              : '-',
+                          isSmall: true,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildResultRow(
+                          '입수량',
+                          qty > 0 ? '${qty.toStringAsFixed(0)}개' : '-',
+                          isSmall: true,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: _buildResultRow(
+                          '개당택배',
+                          shipPerItem > 0
+                              ? '${shipPerItem.toStringAsFixed(0)}원'
+                              : '-',
+                          isSmall: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: _buildResultRow(
+                          '매장 이익금',
+                          (selling > 0 && supply > 0)
+                              ? '${finalProfit.toStringAsFixed(0)}원'
+                              : '-',
+                          isBold: true,
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: _buildResultRow(
+                          '최종매장 이익률',
+                          (selling > 0 && supply > 0)
+                              ? '${finalRate.toStringAsFixed(1)}%'
+                              : '-',
+                          isBold: true,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
 
-  Widget buildInfoCard(
-    double vatIncludedProposal,
-    double headRate,
-    double supply,
-    double storeRate,
-    double selling,
-    double shipTotal,
-    double qty,
-    double shipPerItem,
-    double profit,
-    double finalRate,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [themeColor.withOpacity(0.05), themeColor.withOpacity(0.02)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: themeColor.withOpacity(0.3), width: 1.5),
-        boxShadow: [
-          BoxShadow(
-            color: themeColor.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(Icons.calculate_outlined, color: themeColor, size: 20),
-              const SizedBox(width: 6),
-              const Text(
-                '계산 결과',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            // 입력 카드
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16),
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.grey.withOpacity(0.1),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
-            ],
-          ),
-          Divider(height: 16, color: themeColor.withOpacity(0.3)),
-          buildInfoTitle('제안단가'),
-          buildInfoValue(
-            vatIncludedProposal > 0
-                ? '${vatIncludedProposal.toStringAsFixed(0)}원 (VAT포함)'
-                : '-',
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('지점공급가'),
-                    buildInfoValue(
-                      supply > 0 ? '${supply.toStringAsFixed(0)}원' : '-',
-                    ),
-                  ],
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildInputField(
+                    '제안단가',
+                    proposalController,
+                    () => calculate(trigger: 'proposal'),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: isVatIncluded,
+                        onChanged: (v) {
+                          setState(() => isVatIncluded = v ?? false);
+                          calculate(trigger: 'proposal');
+                        },
+                      ),
+                      const Text('VAT 포함', style: TextStyle(fontSize: 14)),
+                      const SizedBox(width: 16),
+                      Checkbox(
+                        value: isRoundTo100,
+                        onChanged: (v) {
+                          setState(() => isRoundTo100 = v ?? false);
+                        },
+                      ),
+                      const Text('100원 단위 정리', style: TextStyle(fontSize: 14)),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  _buildInputField(
+                    '본사이익률(%)',
+                    headMarginRateController,
+                    () => calculate(trigger: 'headRate'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInputField(
+                    '지점공급가',
+                    supplyPriceController,
+                    () => calculate(trigger: 'supply'),
+                  ),
+                  const Divider(height: 24),
+                  _buildInputField(
+                    '매장이익률(%)',
+                    storeMarginRateController,
+                    () => calculate(trigger: 'storeRate'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInputField(
+                    '최종판매가',
+                    sellingPriceController,
+                    () => calculate(trigger: 'selling'),
+                  ),
+                  const Divider(height: 24),
+                  _buildInputField(
+                    '총 택배비',
+                    shippingController,
+                    () => calculate(trigger: 'ship'),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildInputField(
+                    '입수량',
+                    qtyController,
+                    () => calculate(trigger: 'qty'),
+                  ),
+                ],
               ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('본사이익률'),
-                    buildInfoValue(
-                      headRate > 0 ? '${headRate.toStringAsFixed(1)}%' : '-',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('매장판매가'),
-                    buildInfoValue(
-                      selling > 0 ? '${selling.toStringAsFixed(0)}원' : '-',
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('매장이익률'),
-                    buildInfoValue(
-                      storeRate > 0 ? '${storeRate.toStringAsFixed(1)}%' : '-',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('택배비'),
-                    buildInfoValue(
-                      shipTotal > 0 ? '${shipTotal.toStringAsFixed(0)}원' : '-',
-                      fontSize: 12,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('입수량'),
-                    buildInfoValue(
-                      qty > 0 ? '${qty.toStringAsFixed(0)}개' : '-',
-                      fontSize: 12,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('개당택배'),
-                    buildInfoValue(
-                      shipPerItem > 0
-                          ? '${shipPerItem.toStringAsFixed(0)}원'
-                          : '-',
-                      fontSize: 12,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          Divider(height: 16, color: themeColor.withOpacity(0.3)),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('매장 이익금', isBold: true),
-                    buildInfoValue(
-                      (selling > 0 && supply > 0)
-                          ? '${profit.toStringAsFixed(0)}원'
-                          : '-',
-                      isBold: true,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    buildInfoTitle('최종매장 이익률', isBold: true),
-                    buildInfoValue(
-                      (selling > 0 && supply > 0)
-                          ? '${finalRate.toStringAsFixed(1)}%'
-                          : '-',
-                      isBold: true,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+            ),
 
-  Widget buildInfoTitle(String text, {bool isBold = false}) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: 11,
-        fontWeight: isBold ? FontWeight.bold : FontWeight.w500,
-        color: Colors.black54,
-      ),
-    );
-  }
-
-  Widget buildInfoValue(String text, {bool isBold = false, double? fontSize}) {
-    return Text(
-      text,
-      style: TextStyle(
-        fontSize: fontSize ?? 14,
-        fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
-        color: isBold ? themeColor : Colors.black87,
-      ),
-    );
-  }
-
-  Widget buildInputCard() {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '기본 정보',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          buildInput(
-            '1. 제안 단가',
-            proposalController,
-            () => calculate(trigger: 'proposal'),
-          ),
-          const SizedBox(height: 8),
-          buildCheck('VAT 포함', isVatIncluded, (v) {
-            setState(() => isVatIncluded = v ?? false);
-            calculate(trigger: 'proposal');
-          }),
-          buildCheck('100원 단위 정리', isRoundTo100, (v) {
-            setState(() => isRoundTo100 = v ?? false);
-          }),
-          const Divider(height: 20),
-          const Text(
-            '본사 ↔ 지점 조건',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          buildInput(
-            '2. 본사 마진율 (%)',
-            headMarginRateController,
-            () => calculate(trigger: 'headRate'),
-            color: themeColor.withOpacity(0.1),
-          ),
-          const SizedBox(height: 8),
-          buildInput(
-            '3. 지점공급가',
-            supplyPriceController,
-            () => calculate(trigger: 'supply'),
-            color: themeColor.withOpacity(0.1),
-          ),
-          const Divider(height: 20),
-          const Text(
-            '매장 판매 조건',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          buildInput(
-            '4. 매장 이익률 (%)',
-            storeMarginRateController,
-            () => calculate(trigger: 'storeRate'),
-            color: Colors.amber.withOpacity(0.1),
-          ),
-          const SizedBox(height: 8),
-          buildInput(
-            '5. 최종 판매가',
-            sellingPriceController,
-            () => calculate(trigger: 'selling'),
-            color: Colors.amber.withOpacity(0.1),
-          ),
-          const Divider(height: 20),
-          const Text(
-            '물류 조건',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 10),
-          buildInput(
-            '총 택배비',
-            shippingController,
-            () => calculate(trigger: 'ship'),
-          ),
-          const SizedBox(height: 8),
-          buildInput('입수량', qtyController, () => calculate(trigger: 'qty')),
-        ],
-      ),
-    );
-  }
-
-  Widget buildSaveButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: saveToHistory,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: themeColor,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          elevation: 2,
-        ),
-        child: const Text(
-          '히스토리에 저장',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+            // 저장 버튼
+            Container(
+              margin: const EdgeInsets.all(16),
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: saveToHistory,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.grey.shade800,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                child: const Text(
+                  '히스토리에 저장',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 
-  Widget buildCheck(String label, bool value, Function(bool?) onChanged) {
-    return Row(
-      children: [
-        Checkbox(value: value, onChanged: onChanged, activeColor: themeColor),
-        Text(label, style: const TextStyle(fontSize: 12)),
-      ],
-    );
-  }
-
-  Widget buildInput(
+  Widget _buildResultRow(
     String label,
-    TextEditingController controller,
-    VoidCallback onChanged, {
-    Color? color,
+    String value, {
+    bool isSmall = false,
+    bool isBold = false,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: Colors.black54,
+          style: TextStyle(
+            fontSize: isSmall ? 11 : 13,
+            color: Colors.grey.shade700,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
           ),
         ),
         const SizedBox(height: 4),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: isSmall ? 13 : 16,
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            color: isBold ? Colors.pink : Colors.black87,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInputField(
+    String label,
+    TextEditingController controller,
+    VoidCallback onChanged,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: Colors.black87,
+          ),
+        ),
+        const SizedBox(height: 6),
         TextField(
           controller: controller,
           keyboardType: TextInputType.number,
@@ -1178,32 +978,40 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           onChanged: (_) => onChanged(),
           decoration: InputDecoration(
             filled: true,
-            fillColor: color ?? Colors.grey.shade50,
+            fillColor: Colors.grey.shade50,
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide.none,
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: BorderSide(color: Colors.grey.shade300),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+              borderSide: const BorderSide(color: Colors.grey, width: 2),
             ),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 12,
-              vertical: 10,
+              vertical: 12,
             ),
           ),
-          style: const TextStyle(fontSize: 14),
         ),
       ],
     );
   }
 }
 
+// 🔥 검색 시트: 입력 후 검색 버튼 방식
 class ProductSearchSheet extends StatefulWidget {
   final List<Product> products;
-  final Color themeColor;
+  final bool isProductsLoaded;
   final Function(Product) onProductSelected;
 
   const ProductSearchSheet({
     super.key,
     required this.products,
-    required this.themeColor,
+    required this.isProductsLoaded,
     required this.onProductSelected,
   });
 
@@ -1212,27 +1020,44 @@ class ProductSearchSheet extends StatefulWidget {
 }
 
 class _ProductSearchSheetState extends State<ProductSearchSheet> {
-  final TextEditingController searchController = TextEditingController();
-  List<Product> filteredProducts = [];
+  final TextEditingController nameController = TextEditingController();
+  final TextEditingController barcodeController = TextEditingController();
+  final TextEditingController posCodeController = TextEditingController();
 
-  @override
-  void initState() {
-    super.initState();
-    filteredProducts = widget.products;
-  }
+  List<Product> searchResults = [];
+  bool hasSearched = false;
 
-  void filterProducts(String query) {
+  void searchProduct() {
+    if (!widget.isProductsLoaded) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('제품 데이터를 로딩 중입니다. 잠시만 기다려주세요.')),
+      );
+      return;
+    }
+
+    String name = nameController.text.trim();
+    String barcode = barcodeController.text.trim();
+    String posCode = posCodeController.text.trim();
+
+    if (name.isEmpty && barcode.isEmpty && posCode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('제품명, 바코드, 또는 POS코드를 입력해주세요.')),
+      );
+      return;
+    }
+
     setState(() {
-      if (query.isEmpty) {
-        filteredProducts = widget.products;
-      } else {
-        filteredProducts =
-            widget.products.where((p) {
-              return p.name.toLowerCase().contains(query.toLowerCase()) ||
-                  p.code.contains(query) ||
-                  p.barcode.contains(query);
-            }).toList();
-      }
+      searchResults =
+          widget.products.where((p) {
+            bool matchName =
+                name.isNotEmpty &&
+                p.name.toLowerCase().contains(name.toLowerCase());
+            bool matchBarcode =
+                barcode.isNotEmpty && p.barcode.contains(barcode);
+            bool matchPosCode = posCode.isNotEmpty && p.code.contains(posCode);
+            return matchName || matchBarcode || matchPosCode;
+          }).toList();
+      hasSearched = true;
     });
   }
 
@@ -1244,25 +1069,17 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
       minChildSize: 0.5,
       expand: false,
       builder: (context, scrollController) {
-        return Column(
-          children: [
-            const SizedBox(height: 8),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey[300],
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
+        return Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   const Text(
                     '제품 검색',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                   ),
                   IconButton(
                     icon: const Icon(Icons.close),
@@ -1270,136 +1087,185 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                   ),
                 ],
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: TextField(
-                controller: searchController,
-                onChanged: filterProducts,
+              const SizedBox(height: 16),
+
+              // 검색 입력 필드들
+              TextField(
+                controller: nameController,
                 decoration: InputDecoration(
-                  hintText: '제품명, 상품코드, 바코드로 검색',
-                  prefixIcon: const Icon(Icons.search),
-                  suffixIcon:
-                      searchController.text.isNotEmpty
-                          ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              searchController.clear();
-                              filterProducts('');
-                            },
-                          )
-                          : null,
+                  labelText: '제품명',
+                  hintText: '예: 매드독 패딩',
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
+                    borderRadius: BorderRadius.circular(8),
                   ),
-                  filled: true,
-                  fillColor: Colors.grey.shade100,
-                  contentPadding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+                  prefixIcon: const Icon(Icons.shopping_bag),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: barcodeController,
+                decoration: InputDecoration(
+                  labelText: '바코드',
+                  hintText: '예: 8820250923178',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixIcon: const Icon(Icons.qr_code),
+                ),
+                keyboardType: TextInputType.number,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: posCodeController,
+                decoration: InputDecoration(
+                  labelText: 'POS 상품코드',
+                  hintText: '예: WP17462',
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  prefixIcon: const Icon(Icons.tag),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // 검색 버튼
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: searchProduct,
+                  icon: const Icon(Icons.search),
+                  label: const Text('검색'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.grey.shade800,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                '${filteredProducts.length}개의 제품',
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-            ),
-            const SizedBox(height: 8),
-            Expanded(
-              child:
-                  filteredProducts.isEmpty
-                      ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.search_off,
-                              size: 64,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
-                              '검색 결과가 없습니다',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ],
-                        ),
-                      )
-                      : ListView.builder(
-                        controller: scrollController,
-                        itemCount: filteredProducts.length,
-                        itemBuilder: (context, index) {
-                          final product = filteredProducts[index];
-                          double headRate =
-                              (product.supplyPrice > 0)
-                                  ? ((product.supplyPrice -
-                                          product.purchasePrice) /
-                                      product.supplyPrice *
-                                      100)
-                                  : 0.0;
-                          double storeRate =
-                              (product.sellingPrice > 0)
-                                  ? ((product.sellingPrice -
-                                          product.supplyPrice) /
-                                      product.sellingPrice *
-                                      100)
-                                  : 0.0;
+              const SizedBox(height: 16),
 
-                          return Card(
-                            margin: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 4,
-                            ),
-                            child: ListTile(
-                              title: Text(
-                                product.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
+              // 검색 결과
+              if (hasSearched) ...[
+                Text(
+                  '검색 결과: ${searchResults.length}개',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade700,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Divider(height: 16),
+              ],
+
+              Expanded(
+                child:
+                    !hasSearched
+                        ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.search, size: 64, color: Colors.grey),
+                              SizedBox(height: 16),
+                              Text(
+                                '제품명, 바코드 또는 POS코드를\n입력 후 검색 버튼을 눌러주세요',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 14,
                                 ),
                               ),
-                              subtitle: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '매입: ${product.purchasePrice.toStringAsFixed(0)}원 | 공급: ${product.supplyPrice.toStringAsFixed(0)}원 | 판매: ${product.sellingPrice.toStringAsFixed(0)}원',
-                                    style: const TextStyle(fontSize: 11),
+                            ],
+                          ),
+                        )
+                        : searchResults.isEmpty
+                        ? const Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.search_off,
+                                size: 64,
+                                color: Colors.grey,
+                              ),
+                              SizedBox(height: 16),
+                              Text(
+                                '검색 결과가 없습니다',
+                                style: TextStyle(
+                                  color: Colors.grey,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
+                        : ListView.builder(
+                          controller: scrollController,
+                          itemCount: searchResults.length,
+                          itemBuilder: (context, index) {
+                            final product = searchResults[index];
+                            double headRate =
+                                (product.supplyPrice > 0)
+                                    ? ((product.supplyPrice -
+                                            product.purchasePrice) /
+                                        product.supplyPrice *
+                                        100)
+                                    : 0.0;
+                            double storeRate =
+                                (product.sellingPrice > 0)
+                                    ? ((product.sellingPrice -
+                                            product.supplyPrice) /
+                                        product.sellingPrice *
+                                        100)
+                                    : 0.0;
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                title: Text(
+                                  product.name,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
                                   ),
-                                  Text(
-                                    '본사: ${headRate.toStringAsFixed(1)}% | 매장: ${storeRate.toStringAsFixed(1)}% | 재고: ${product.stock}개',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: widget.themeColor,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  if (product.code.isNotEmpty)
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
                                     Text(
-                                      '코드: ${product.code}',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        color: Colors.grey.shade600,
+                                      '매입: ${product.purchasePrice.toStringAsFixed(0)}원 | 공급: ${product.supplyPrice.toStringAsFixed(0)}원 | 판매: ${product.sellingPrice.toStringAsFixed(0)}원',
+                                      style: const TextStyle(fontSize: 11),
+                                    ),
+                                    Text(
+                                      '본사: ${headRate.toStringAsFixed(1)}% | 매장: ${storeRate.toStringAsFixed(1)}% | 재고: ${product.stock}개',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.pink,
+                                        fontWeight: FontWeight.bold,
                                       ),
                                     ),
-                                ],
+                                    if (product.code.isNotEmpty)
+                                      Text(
+                                        '코드: ${product.code}',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: Colors.grey,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () => widget.onProductSelected(product),
                               ),
-                              trailing: const Icon(Icons.chevron_right),
-                              onTap: () => widget.onProductSelected(product),
-                            ),
-                          );
-                        },
-                      ),
-            ),
-          ],
+                            );
+                          },
+                        ),
+              ),
+            ],
+          ),
         );
       },
     );
@@ -1407,7 +1273,9 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
 
   @override
   void dispose() {
-    searchController.dispose();
+    nameController.dispose();
+    barcodeController.dispose();
+    posCodeController.dispose();
     super.dispose();
   }
 }
