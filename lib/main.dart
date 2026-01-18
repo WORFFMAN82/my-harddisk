@@ -1051,6 +1051,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
   final TextEditingController searchController = TextEditingController();
   List<Product> filteredProducts = [];
   final FocusNode _focusNode = FocusNode();
+  String _lastQuery = '';
 
   @override
   void initState() {
@@ -1066,6 +1067,9 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
   }
 
   void searchProducts(String query) {
+    if (_lastQuery == query) return;
+    _lastQuery = query;
+
     setState(() {
       if (query.isEmpty) {
         filteredProducts = widget.products;
@@ -1120,7 +1124,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      TextFormField(
+                      TextField(
                         controller: searchController,
                         focusNode: _focusNode,
                         decoration: InputDecoration(
@@ -1139,7 +1143,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                         style: const TextStyle(fontSize: 13),
                         textInputAction: TextInputAction.search,
                         onChanged: searchProducts,
-                        onFieldSubmitted: (value) {
+                        onSubmitted: (value) {
                           _focusNode.unfocus();
                         },
                       ),
