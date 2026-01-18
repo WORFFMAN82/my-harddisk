@@ -203,7 +203,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       for (int i = 1; i < csvData.length; i++) {
         try {
           final row = csvData[i];
-          if (row.length < 11) continue;
+          if (row.length < 11) {
+            // 13에서 11로 변경
+            failCount++;
+            debugPrint('행 $i: 열 개수 부족 (${row.length}개)');
+            continue;
+          }
 
           double parsePrice(dynamic value) {
             if (value == null) return 0.0;
