@@ -346,41 +346,58 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     if (quantity == 0) quantity = 1;
 
     setState(() {
+      // 1. VAT 포함 제안단가 계산
       vatIncludedProposal = isVatIncluded ? proposal : proposal * 1.1;
       shippingCostPerUnit = shippingCost / quantity;
 
-      if (trigger == 'proposal' && headRate > 0 && vatIncludedProposal > 0) {
-        calculatedSupply = roundTo100(
-          vatIncludedProposal / (1 - headRate / 100),
-        );
-
-        if (storeRate > 0) {
-          calculatedSelling = roundTo100(
-            calculatedSupply / (1 - storeRate / 100),
-          );
-        }
-      } else if (trigger == 'headRate' &&
-          vatIncludedProposal > 0 &&
-          headRate >= 0) {
-        if (headRate > 0) {
+      // 2. 트리거에 따라 계산 수행
+      if (trigger == 'proposal') {
+        // 제안단가 변경 시
+        if (vatIncludedProposal > 0 && headRate > 0) {
           calculatedSupply = roundTo100(
             vatIncludedProposal / (1 - headRate / 100),
           );
+          supplyController.text = calculatedSupply.toStringAsFixed(0);
+
+          if (storeRate > 0) {
+            calculatedSelling = roundTo100(
+              calculatedSupply / (1 - storeRate / 100),
+            );
+            sellingController.text = calculatedSelling.toStringAsFixed(0);
+          }
         }
 
-        if (storeRate > 0 && calculatedSupply > 0) {
-          calculatedSelling = roundTo100(
-            calculatedSupply / (1 - storeRate / 100),
-          );
+        // 본사이익률 재계산
+        if (calculatedSupply > 0 && vatIncludedProposal > 0) {
+          calculatedHeadRate =
+              ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
+              100;
+          headRateController.text = calculatedHeadRate.toStringAsFixed(1);
         }
-      } else if (trigger == 'supply' && supply > 0) {
+      } else if (trigger == 'headRate') {
+        // 본사이익률 변경 시 -> 공급가 재계산
+        if (vatIncludedProposal > 0 && headRate > 0) {
+          calculatedSupply = roundTo100(
+            vatIncludedProposal / (1 - headRate / 100),
+          );
+          supplyController.text = calculatedSupply.toStringAsFixed(0);
+          calculatedHeadRate = headRate;
+
+          if (storeRate > 0) {
+            calculatedSelling = roundTo100(
+              calculatedSupply / (1 - storeRate / 100),
+            );
+            sellingController.text = calculatedSelling.toStringAsFixed(0);
+          }
+        }
+      } else if (trigger == 'supply') {
+        // 공급가 변경 시 -> 본사이익률 재계산, 판매가 재계산
         calculatedSupply = supply;
 
         if (vatIncludedProposal > 0) {
           calculatedHeadRate =
               ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
               100;
-
           headRateController.text = calculatedHeadRate.toStringAsFixed(1);
         }
 
@@ -388,52 +405,30 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           calculatedSelling = roundTo100(
             calculatedSupply / (1 - storeRate / 100),
           );
+          sellingController.text = calculatedSelling.toStringAsFixed(0);
         }
-      } else if (trigger == 'storeRate' &&
-          calculatedSupply > 0 &&
-          storeRate >= 0) {
-        if (storeRate > 0) {
+      } else if (trigger == 'storeRate') {
+        // 매장이익률 변경 시 -> 판매가 재계산
+        if (calculatedSupply > 0 && storeRate > 0) {
           calculatedSelling = roundTo100(
             calculatedSupply / (1 - storeRate / 100),
           );
+          sellingController.text = calculatedSelling.toStringAsFixed(0);
+          calculatedStoreRate = storeRate;
         }
-      } else if (trigger == 'selling' && selling > 0) {
+      } else if (trigger == 'selling') {
+        // 판매가 변경 시 -> 매장이익률 재계산
         calculatedSelling = selling;
 
         if (calculatedSupply > 0) {
           calculatedStoreRate =
               ((calculatedSelling - calculatedSupply) / calculatedSelling) *
               100;
-
           storeRateController.text = calculatedStoreRate.toStringAsFixed(1);
-        } else if (supply > 0) {
-          calculatedSupply = supply;
-          calculatedStoreRate =
-              ((calculatedSelling - calculatedSupply) / calculatedSelling) *
-              100;
-
-          storeRateController.text = calculatedStoreRate.toStringAsFixed(1);
-
-          if (vatIncludedProposal > 0) {
-            calculatedHeadRate =
-                ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
-                100;
-            headRateController.text = calculatedHeadRate.toStringAsFixed(1);
-          }
-        } else if (storeRate > 0) {
-          calculatedSupply = roundTo100(
-            calculatedSelling * (1 - storeRate / 100),
-          );
-
-          if (vatIncludedProposal > 0) {
-            calculatedHeadRate =
-                ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
-                100;
-            headRateController.text = calculatedHeadRate.toStringAsFixed(1);
-          }
         }
       }
 
+      // 3. 최종 계산 (항상 재계산)
       if (calculatedSupply > 0 && vatIncludedProposal > 0) {
         calculatedHeadRate =
             ((calculatedSupply - vatIncludedProposal) / calculatedSupply) * 100;
@@ -444,18 +439,21 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             ((calculatedSelling - calculatedSupply) / calculatedSelling) * 100;
       }
 
+      // 매장이익금
       if (calculatedSelling > 0 && calculatedSupply > 0) {
         storeProfit = calculatedSelling - calculatedSupply;
       } else {
         storeProfit = 0;
       }
 
+      // 최종매장이익금 = 매장이익금 - 택배비
       if (storeProfit > 0) {
         finalStoreProfit = storeProfit - shippingCostPerUnit;
       } else {
         finalStoreProfit = 0;
       }
 
+      // 최종매장이익률
       if (calculatedSelling > 0 && finalStoreProfit > 0) {
         finalStoreProfitRate = (finalStoreProfit / calculatedSelling) * 100;
       } else {
