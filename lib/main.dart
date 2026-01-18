@@ -1,9 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:csv/csv.dart';
-import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(const AnyPriceApp());
 
@@ -42,26 +39,6 @@ class Product {
     required this.sellingPrice,
     required this.stock,
   });
-
-  Map<String, dynamic> toJson() => {
-    'code': code,
-    'barcode': barcode,
-    'name': name,
-    'purchasePrice': purchasePrice,
-    'supplyPrice': supplyPrice,
-    'sellingPrice': sellingPrice,
-    'stock': stock,
-  };
-
-  factory Product.fromJson(Map<String, dynamic> json) => Product(
-    code: json['code'] ?? '',
-    barcode: json['barcode'] ?? '',
-    name: json['name'] ?? '',
-    purchasePrice: (json['purchasePrice'] ?? 0).toDouble(),
-    supplyPrice: (json['supplyPrice'] ?? 0).toDouble(),
-    sellingPrice: (json['sellingPrice'] ?? 0).toDouble(),
-    stock: (json['stock'] ?? 0).toInt(),
-  );
 }
 
 class CalculationHistory {
@@ -118,7 +95,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   List<CalculationHistory> historyList = [];
   List<Product> productList = [];
-  bool isLoadingProducts = false;
+  bool isLoadingProducts = true;
 
   final List<Color> themeColors = const [
     Color(0xFFFF6F61),
@@ -144,7 +121,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   @override
   void initState() {
     super.initState();
-    loadProducts();
+    loadProductsFromAssets();
   }
 
   @override
@@ -159,113 +136,79 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     super.dispose();
   }
 
-  Future<void> loadProducts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String? productsJson = prefs.getString('products');
-    if (productsJson != null) {
-      final List<dynamic> decoded = jsonDecode(productsJson);
-      setState(() {
-        productList = decoded.map((item) => Product.fromJson(item)).toList();
-      });
-    }
-  }
-
-  Future<void> saveProducts() async {
-    final prefs = await SharedPreferences.getInstance();
-    final String encoded = jsonEncode(
-      productList.map((p) => p.toJson()).toList(),
-    );
-    await prefs.setString('products', encoded);
-  }
-
-  Future<void> uploadCSV() async {
+  Future<void> loadProductsFromAssets() async {
     try {
-      FilePickerResult? result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['csv', 'txt'],
+      final String csvString = await rootBundle.loadString(
+        'assets/products.csv',
       );
 
-      if (result != null) {
-        setState(() => isLoadingProducts = true);
+      List<List<dynamic>> csvData = const CsvToListConverter().convert(
+        csvString,
+      );
 
-        final bytes = result.files.first.bytes;
-        if (bytes == null) throw Exception('파일을 읽을 수 없습니다.');
+      if (csvData.isEmpty) {
+        throw Exception('CSV 파일이 비어있습니다.');
+      }
 
-        String csvString;
+      List<Product> newProducts = [];
+      for (int i = 1; i < csvData.length; i++) {
         try {
-          csvString = utf8.decode(bytes);
-        } catch (e) {
-          csvString = latin1.decode(bytes);
-        }
+          final row = csvData[i];
+          if (row.length < 13) continue;
 
-        List<List<dynamic>> csvData = const CsvToListConverter().convert(
-          csvString,
-        );
-
-        if (csvData.isEmpty) throw Exception('CSV 파일이 비어있습니다.');
-
-        List<Product> newProducts = [];
-        for (int i = 1; i < csvData.length; i++) {
-          try {
-            final row = csvData[i];
-            if (row.length < 11) continue;
-
-            double parsePrice(dynamic value) {
-              if (value == null) return 0.0;
-              String strValue = value.toString().replaceAll(',', '').trim();
-              return double.tryParse(strValue) ?? 0.0;
-            }
-
-            int parseInt(dynamic value) {
-              if (value == null) return 0;
-              String strValue = value.toString().replaceAll(',', '').trim();
-              return int.tryParse(strValue) ?? 0;
-            }
-
-            newProducts.add(
-              Product(
-                code: row[0]?.toString() ?? '',
-                barcode: row[1]?.toString() ?? '',
-                name: row[7]?.toString() ?? '',
-                purchasePrice: parsePrice(row[8]),
-                supplyPrice: parsePrice(row[9]),
-                sellingPrice: parsePrice(row[10]),
-                stock: parseInt(row[12]),
-              ),
-            );
-          } catch (e) {
-            continue;
+          double parsePrice(dynamic value) {
+            if (value == null) return 0.0;
+            String strValue = value.toString().replaceAll(',', '').trim();
+            return double.tryParse(strValue) ?? 0.0;
           }
-        }
 
-        setState(() {
-          productList = newProducts;
-          isLoadingProducts = false;
-        });
+          int parseInt(dynamic value) {
+            if (value == null) return 0;
+            String strValue = value.toString().replaceAll(',', '').trim();
+            return int.tryParse(strValue) ?? 0;
+          }
 
-        await saveProducts();
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${newProducts.length}개의 제품을 불러왔습니다.')),
+          newProducts.add(
+            Product(
+              code: row[0]?.toString() ?? '',
+              barcode: row[1]?.toString() ?? '',
+              name: row[7]?.toString() ?? '',
+              purchasePrice: parsePrice(row[8]),
+              supplyPrice: parsePrice(row[9]),
+              sellingPrice: parsePrice(row[10]),
+              stock: parseInt(row[12]),
+            ),
           );
+        } catch (e) {
+          continue;
         }
+      }
+
+      setState(() {
+        productList = newProducts;
+        isLoadingProducts = false;
+      });
+
+      if (mounted && newProducts.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${newProducts.length}개의 제품 데이터가 로드되었습니다')),
+        );
       }
     } catch (e) {
       setState(() => isLoadingProducts = false);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
-        ).showSnackBar(SnackBar(content: Text('파일 업로드 실패: $e')));
+        ).showSnackBar(SnackBar(content: Text('제품 데이터 로드 실패: $e')));
       }
     }
   }
 
   void showProductSearch() {
     if (productList.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('먼저 제품 데이터를 업로드해주세요.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('제품 데이터를 불러오는 중입니다. 잠시만 기다려주세요.')),
+      );
       return;
     }
 
@@ -531,14 +474,11 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                                 children: [
                                   const SizedBox(height: 4),
                                   Text(
-                                    '제안: ${history.proposal.toStringAsFixed(0)}원 | '
-                                    '공급: ${history.supply.toStringAsFixed(0)}원 | '
-                                    '판매: ${history.selling.toStringAsFixed(0)}원',
+                                    '제안: ${history.proposal.toStringAsFixed(0)}원 | 공급: ${history.supply.toStringAsFixed(0)}원 | 판매: ${history.selling.toStringAsFixed(0)}원',
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                   Text(
-                                    '매장이익률: ${history.finalRate.toStringAsFixed(1)}% | '
-                                    '이익금: ${history.finalProfit.toStringAsFixed(0)}원',
+                                    '매장이익률: ${history.finalRate.toStringAsFixed(1)}% | 이익금: ${history.finalProfit.toStringAsFixed(0)}원',
                                     style: const TextStyle(
                                       fontSize: 12,
                                       color: Colors.green,
@@ -563,9 +503,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                                     ),
                                     onPressed: () {
                                       deleteHistory(history);
-                                      if (historyList.isEmpty) {
+                                      if (historyList.isEmpty)
                                         Navigator.pop(context);
-                                      }
                                     },
                                   ),
                                   const Icon(Icons.chevron_right),
@@ -622,11 +561,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             icon: const Icon(Icons.search),
             onPressed: showProductSearch,
             tooltip: '제품 검색',
-          ),
-          IconButton(
-            icon: const Icon(Icons.upload_file),
-            onPressed: uploadCSV,
-            tooltip: 'CSV 업로드',
           ),
           IconButton(
             icon: Stack(
