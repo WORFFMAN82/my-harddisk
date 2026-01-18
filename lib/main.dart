@@ -122,7 +122,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   double calculatedHeadRate = 0;
   double calculatedStoreRate = 0;
   double shippingCostPerUnit = 0;
-  double actualSellingPrice = 0;
+  double storeProfit = 0;
   double finalStoreProfit = 0;
   double finalStoreProfitRate = 0;
   double priceDifference = 0;
@@ -436,16 +436,23 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             ((calculatedSelling - calculatedSupply) / calculatedSelling) * 100;
       }
 
-      actualSellingPrice = calculatedSelling - shippingCostPerUnit;
+      // 매장이익금 = 판매가 - 공급가
+      if (calculatedSelling > 0 && calculatedSupply > 0) {
+        storeProfit = calculatedSelling - calculatedSupply;
+      } else {
+        storeProfit = 0;
+      }
 
-      if (actualSellingPrice > 0 && calculatedSupply > 0) {
-        finalStoreProfit = actualSellingPrice - calculatedSupply;
+      // 최종매장이익금 = 매장이익금 - 택배비
+      if (storeProfit > 0) {
+        finalStoreProfit = storeProfit - shippingCostPerUnit;
       } else {
         finalStoreProfit = 0;
       }
 
-      if (actualSellingPrice > 0 && finalStoreProfit > 0) {
-        finalStoreProfitRate = (finalStoreProfit / actualSellingPrice) * 100;
+      // 최종매장이익률 = 최종매장이익금 / 판매가 × 100
+      if (calculatedSelling > 0 && finalStoreProfit > 0) {
+        finalStoreProfitRate = (finalStoreProfit / calculatedSelling) * 100;
       } else {
         finalStoreProfitRate = 0;
       }
@@ -470,12 +477,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           style: TextStyle(
             fontWeight: FontWeight.bold,
             color: Colors.white,
-            fontSize: 18,
+            fontSize: 17,
           ),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.search, color: Colors.white),
+            icon: const Icon(Icons.search, color: Colors.white, size: 22),
             onPressed: () {
               showModalBottomSheet(
                 context: context,
@@ -510,7 +517,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             },
           ),
           IconButton(
-            icon: const Icon(Icons.history, color: Colors.white),
+            icon: const Icon(Icons.history, color: Colors.white, size: 22),
             onPressed: () {
               showModalBottomSheet(
                 context: context,
@@ -546,7 +553,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                                 child: Text(
                                   '계산 히스토리',
                                   style: TextStyle(
-                                    fontSize: 20,
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
@@ -567,18 +574,28 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                                               margin:
                                                   const EdgeInsets.symmetric(
                                                     horizontal: 16,
-                                                    vertical: 8,
+                                                    vertical: 6,
                                                   ),
                                               child: ListTile(
+                                                dense: true,
                                                 title: Text(
                                                   '제안: ${history.proposal.toStringAsFixed(0)}원',
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                  ),
                                                 ),
                                                 subtitle: Text(
                                                   '공급: ${history.supply.toStringAsFixed(0)}원 | 판매: ${history.selling.toStringAsFixed(0)}원\n'
                                                   '본사: ${history.headRate.toStringAsFixed(1)}% | 매장: ${history.storeRate.toStringAsFixed(1)}%',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                  ),
                                                 ),
                                                 trailing: Text(
                                                   '${history.timestamp.month}/${history.timestamp.day}',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                  ),
                                                 ),
                                                 onTap: () {
                                                   setState(() {
@@ -607,12 +624,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(10.0),
         child: Column(
           children: [
             if (selectedProduct != null) _buildComparisonCard(),
             _buildInfoCard(),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             _buildInputCard(),
           ],
         ),
@@ -623,13 +640,27 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   Widget _buildComparisonCard() {
     if (selectedProduct == null) return const SizedBox.shrink();
 
+    // 기준가 마진율 계산
+    double baseHeadRate =
+        selectedProduct!.supplyPrice > 0
+            ? ((selectedProduct!.supplyPrice - selectedProduct!.purchasePrice) /
+                    selectedProduct!.supplyPrice) *
+                100
+            : 0;
+    double baseStoreRate =
+        selectedProduct!.sellingPrice > 0
+            ? ((selectedProduct!.sellingPrice - selectedProduct!.supplyPrice) /
+                    selectedProduct!.sellingPrice) *
+                100
+            : 0;
+
     return Card(
       color: Colors.blue[50],
-      elevation: 3,
-      margin: const EdgeInsets.only(bottom: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -638,10 +669,10 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               children: [
                 const Text(
                   '📦 선택된 제품',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, size: 20),
+                  icon: const Icon(Icons.close, size: 18),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(),
                   onPressed: () {
@@ -652,12 +683,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            const Divider(thickness: 1, height: 12),
+            const Divider(thickness: 1, height: 10),
             Text(
               selectedProduct!.name,
-              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Row(
               children: [
                 Expanded(
@@ -666,62 +697,65 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     children: [
                       const Text(
                         '기준가',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         '매입: ${selectedProduct!.purchasePrice.toStringAsFixed(0)}원',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 11),
                       ),
                       Text(
-                        '공급: ${selectedProduct!.supplyPrice.toStringAsFixed(0)}원',
-                        style: const TextStyle(fontSize: 12),
+                        '공급: ${selectedProduct!.supplyPrice.toStringAsFixed(0)}원 (${baseHeadRate.toStringAsFixed(1)}%)',
+                        style: const TextStyle(fontSize: 11),
                       ),
                       Text(
-                        '판매: ${selectedProduct!.sellingPrice.toStringAsFixed(0)}원',
-                        style: const TextStyle(fontSize: 12),
+                        '판매: ${selectedProduct!.sellingPrice.toStringAsFixed(0)}원 (${baseStoreRate.toStringAsFixed(1)}%)',
+                        style: const TextStyle(fontSize: 11),
                       ),
                     ],
                   ),
                 ),
-                Container(width: 1, height: 60, color: Colors.grey[300]),
-                const SizedBox(width: 12),
+                Container(width: 1, height: 55, color: Colors.grey[300]),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         '현재계산',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         '매입: ${vatIncludedProposal.toStringAsFixed(0)}원',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: 11),
                       ),
                       Text(
-                        '공급: ${calculatedSupply.toStringAsFixed(0)}원',
-                        style: const TextStyle(fontSize: 12),
+                        '공급: ${calculatedSupply.toStringAsFixed(0)}원 (${calculatedHeadRate.toStringAsFixed(1)}%)',
+                        style: const TextStyle(fontSize: 11),
                       ),
                       Text(
-                        '판매: ${calculatedSelling.toStringAsFixed(0)}원',
-                        style: const TextStyle(fontSize: 12),
+                        '판매: ${calculatedSelling.toStringAsFixed(0)}원 (${calculatedStoreRate.toStringAsFixed(1)}%)',
+                        style: const TextStyle(fontSize: 11),
                       ),
                     ],
                   ),
                 ),
-                Container(width: 1, height: 60, color: Colors.grey[300]),
-                const SizedBox(width: 12),
+                Container(width: 1, height: 55, color: Colors.grey[300]),
+                const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text(
                         '차액',
-                        style: TextStyle(fontSize: 11, color: Colors.grey),
+                        style: TextStyle(fontSize: 10, color: Colors.grey),
                       ),
+                      const SizedBox(height: 2),
                       Text(
                         '${(vatIncludedProposal - selectedProduct!.purchasePrice).toStringAsFixed(0)}원',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           color:
                               (vatIncludedProposal -
                                           selectedProduct!.purchasePrice) >=
@@ -734,7 +768,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                       Text(
                         '${(calculatedSupply - selectedProduct!.supplyPrice).toStringAsFixed(0)}원',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           color:
                               (calculatedSupply -
                                           selectedProduct!.supplyPrice) >=
@@ -747,7 +781,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                       Text(
                         '${(calculatedSelling - selectedProduct!.sellingPrice).toStringAsFixed(0)}원',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: 11,
                           color:
                               (calculatedSelling -
                                           selectedProduct!.sellingPrice) >=
@@ -771,18 +805,18 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   Widget _buildInfoCard() {
     return Card(
       color: Colors.pink[50],
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(10.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               '💰 계산 정보',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
-            const Divider(thickness: 1, height: 12),
+            const Divider(thickness: 1, height: 10),
             _compactInfoRow(
               '제안단가(VAT포함)',
               '${vatIncludedProposal.toStringAsFixed(0)}원',
@@ -801,26 +835,23 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
               '${calculatedSelling.toStringAsFixed(0)}원',
               highlight: true,
             ),
-            if (shippingCostPerUnit > 0) ...[
-              const Divider(thickness: 1, height: 8),
+            const Divider(thickness: 1, height: 8),
+            _compactInfoRow('매장이익금', '${storeProfit.toStringAsFixed(0)}원'),
+            if (shippingCostPerUnit > 0)
               _compactInfoRow(
                 '개당 택배비',
-                '${shippingCostPerUnit.toStringAsFixed(0)}원',
+                '-${shippingCostPerUnit.toStringAsFixed(0)}원',
               ),
-              _compactInfoRow(
-                '실제판매가',
-                '${actualSellingPrice.toStringAsFixed(0)}원',
-                highlight: true,
-              ),
-            ],
-            const Divider(thickness: 1, height: 12),
+            const Divider(thickness: 1, height: 8),
             _compactInfoRow(
               '최종매장이익금',
               '${finalStoreProfit.toStringAsFixed(0)}원',
+              highlight: true,
             ),
             _compactInfoRow(
               '최종매장이익률',
               '${finalStoreProfitRate.toStringAsFixed(1)}%',
+              highlight: true,
             ),
           ],
         ),
@@ -830,21 +861,21 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   Widget _compactInfoRow(String label, String value, {bool highlight = false}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3.0),
+      padding: const EdgeInsets.symmetric(vertical: 2.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Text(
             label,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
             ),
           ),
           Text(
             value,
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 12,
               fontWeight: highlight ? FontWeight.bold : FontWeight.normal,
               color: highlight ? Colors.pink[700] : Colors.black87,
             ),
@@ -856,25 +887,25 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
 
   Widget _buildInputCard() {
     return Card(
-      elevation: 3,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       child: Padding(
-        padding: const EdgeInsets.all(12.0),
+        padding: const EdgeInsets.all(10.0),
         child: Column(
           children: [
             const Text(
               '📝 입력 정보',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
             ),
-            const Divider(thickness: 1, height: 12),
+            const Divider(thickness: 1, height: 10),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 Row(
                   children: [
-                    const Text('VAT포함', style: TextStyle(fontSize: 12)),
+                    const Text('VAT포함', style: TextStyle(fontSize: 11)),
                     Transform.scale(
-                      scale: 0.8,
+                      scale: 0.7,
                       child: Switch(
                         value: isVatIncluded,
                         onChanged: (value) {
@@ -889,9 +920,9 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
                 Row(
                   children: [
-                    const Text('100원단위', style: TextStyle(fontSize: 12)),
+                    const Text('100원단위', style: TextStyle(fontSize: 11)),
                     Transform.scale(
-                      scale: 0.8,
+                      scale: 0.7,
                       child: Switch(
                         value: isRoundTo100,
                         onChanged: (value) {
@@ -906,7 +937,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             _compactTextField(
               '제안단가',
               proposalController,
@@ -942,7 +973,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
                     () => calculate('ship'),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Expanded(
                   child: _compactTextField(
                     '수량',
@@ -964,22 +995,22 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     VoidCallback onChanged,
   ) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 3.0),
       child: TextField(
         controller: controller,
         keyboardType: TextInputType.number,
         inputFormatters: [numFormatter],
         textInputAction: TextInputAction.done,
-        style: const TextStyle(fontSize: 13),
+        style: const TextStyle(fontSize: 12),
         decoration: InputDecoration(
           labelText: label,
-          labelStyle: const TextStyle(fontSize: 12),
+          labelStyle: const TextStyle(fontSize: 11),
           border: const OutlineInputBorder(),
           filled: true,
           fillColor: Colors.grey[100],
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 10,
+            horizontal: 8,
+            vertical: 8,
           ),
           isDense: true,
         ),
@@ -1066,7 +1097,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
             child: Column(
               children: [
                 Container(
-                  margin: const EdgeInsets.symmetric(vertical: 10),
+                  margin: const EdgeInsets.symmetric(vertical: 8),
                   width: 40,
                   height: 4,
                   decoration: BoxDecoration(
@@ -1075,35 +1106,35 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.all(16.0),
+                  padding: const EdgeInsets.all(14.0),
                   child: Column(
                     children: [
                       Text(
                         widget.loadStatus,
                         style: TextStyle(
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: FontWeight.bold,
                           color: widget.isLoaded ? Colors.green : Colors.orange,
                         ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 8),
                       TextFormField(
                         controller: searchController,
                         focusNode: _focusNode,
                         decoration: InputDecoration(
                           hintText: '제품명, 바코드, POS 코드 검색',
-                          hintStyle: const TextStyle(fontSize: 13),
-                          prefixIcon: const Icon(Icons.search, size: 20),
+                          hintStyle: const TextStyle(fontSize: 12),
+                          prefixIcon: const Icon(Icons.search, size: 18),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(10),
                           ),
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 10,
+                            horizontal: 10,
+                            vertical: 8,
                           ),
                           isDense: true,
                         ),
-                        style: const TextStyle(fontSize: 14),
+                        style: const TextStyle(fontSize: 13),
                         textInputAction: TextInputAction.search,
                         onChanged: searchProducts,
                         onFieldSubmitted: (value) {
@@ -1116,7 +1147,12 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                 Expanded(
                   child:
                       filteredProducts.isEmpty
-                          ? const Center(child: Text('검색 결과가 없습니다'))
+                          ? const Center(
+                            child: Text(
+                              '검색 결과가 없습니다',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          )
                           : ListView.builder(
                             controller: scrollController,
                             itemCount: filteredProducts.length,
@@ -1124,16 +1160,20 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                               Product product = filteredProducts[index];
                               return ListTile(
                                 dense: true,
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 2,
+                                ),
                                 title: Text(
                                   product.name,
-                                  style: const TextStyle(fontSize: 13),
+                                  style: const TextStyle(fontSize: 12),
                                 ),
                                 subtitle: Text(
                                   '코드: ${product.code} | 바코드: ${product.barcode}\n'
                                   '매입: ${product.purchasePrice.toStringAsFixed(0)}원 | '
                                   '공급: ${product.supplyPrice.toStringAsFixed(0)}원 | '
                                   '판매: ${product.sellingPrice.toStringAsFixed(0)}원',
-                                  style: const TextStyle(fontSize: 11),
+                                  style: const TextStyle(fontSize: 10),
                                 ),
                                 trailing: Column(
                                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1141,14 +1181,14 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                                     const Text(
                                       '기본입수량',
                                       style: TextStyle(
-                                        fontSize: 9,
+                                        fontSize: 8,
                                         color: Colors.grey,
                                       ),
                                     ),
                                     Text(
                                       '${product.stock}',
                                       style: const TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
                                         fontWeight: FontWeight.bold,
                                       ),
                                     ),
