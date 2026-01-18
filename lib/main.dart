@@ -151,7 +151,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   bool isRoundTo100 = false;
 
   List<Product> productList = [];
-  bool isProductsLoaded = false; // CSV 로드 완료 여부
+  bool isProductsLoaded = false;
+  String loadStatus = '제품 데이터 로딩 중...';
 
   List<CalculationHistory> historyList = [];
 
@@ -161,7 +162,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   void initState() {
     super.initState();
     loadHistory();
-    loadProductsFromAssets(); // 백그라운드에서 조용히 로드
+    loadProductsFromAssets();
   }
 
   @override
@@ -176,9 +177,12 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     super.dispose();
   }
 
-  // CSV 자동 로드 (조용히 백그라운드에서)
   Future<void> loadProductsFromAssets() async {
     try {
+      setState(() {
+        loadStatus = '제품 데이터 로딩 중...';
+      });
+
       final String csvString = await rootBundle.loadString(
         'assets/products.csv',
       );
@@ -187,7 +191,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
         csvString,
       );
 
-      if (csvData.isEmpty) return;
+      if (csvData.isEmpty) {
+        setState(() {
+          loadStatus = 'CSV 파일이 비어있습니다';
+          isProductsLoaded = false;
+        });
+        return;
+      }
 
       List<Product> newProducts = [];
       for (int i = 1; i < csvData.length; i++) {
@@ -226,11 +236,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       setState(() {
         productList = newProducts;
         isProductsLoaded = true;
+        loadStatus = '${newProducts.length}개의 제품 데이터 로드 완료';
       });
-
-      // 조용히 로드 (메시지 없음)
     } catch (e) {
-      setState(() => isProductsLoaded = false);
+      setState(() {
+        isProductsLoaded = false;
+        loadStatus = 'CSV 로드 실패: $e';
+      });
     }
   }
 
@@ -245,6 +257,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           (context) => ProductSearchSheet(
             products: productList,
             isProductsLoaded: isProductsLoaded,
+            loadStatus: loadStatus,
             onProductSelected: (product) {
               applyProduct(product);
               Navigator.pop(context);
@@ -277,9 +290,13 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
       }
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text('${product.name} 제품을 불러왔습니다.')));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${product.name} 제품을 불러왔습니다.'),
+        backgroundColor: Colors.green,
+        duration: const Duration(seconds: 2),
+      ),
+    );
   }
 
   void calculate({required String trigger}) {
@@ -1002,16 +1019,18 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   }
 }
 
-// 🔥 검색 시트: 입력 후 검색 버튼 방식
+// 🔥 개선된 검색 시트: 한 칸 입력 + 실시간 결과 표시
 class ProductSearchSheet extends StatefulWidget {
   final List<Product> products;
   final bool isProductsLoaded;
+  final String loadStatus;
   final Function(Product) onProductSelected;
 
   const ProductSearchSheet({
     super.key,
     required this.products,
     required this.isProductsLoaded,
+    required this.loadStatus,
     required this.onProductSelected,
   });
 
@@ -1020,26 +1039,21 @@ class ProductSearchSheet extends StatefulWidget {
 }
 
 class _ProductSearchSheetState extends State<ProductSearchSheet> {
-  final TextEditingController nameController = TextEditingController();
-  final TextEditingController barcodeController = TextEditingController();
-  final TextEditingController posCodeController = TextEditingController();
-
+  final TextEditingController searchController = TextEditingController();
   List<Product> searchResults = [];
   bool hasSearched = false;
 
   void searchProduct() {
     if (!widget.isProductsLoaded) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('제품 데이터를 로딩 중입니다. 잠시만 기다려주세요.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(widget.loadStatus)));
       return;
     }
 
-    String name = nameController.text.trim();
-    String barcode = barcodeController.text.trim();
-    String posCode = posCodeController.text.trim();
+    String query = searchController.text.trim();
 
-    if (name.isEmpty && barcode.isEmpty && posCode.isEmpty) {
+    if (query.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('제품명, 바코드, 또는 POS코드를 입력해주세요.')),
       );
@@ -1049,16 +1063,22 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
     setState(() {
       searchResults =
           widget.products.where((p) {
-            bool matchName =
-                name.isNotEmpty &&
-                p.name.toLowerCase().contains(name.toLowerCase());
-            bool matchBarcode =
-                barcode.isNotEmpty && p.barcode.contains(barcode);
-            bool matchPosCode = posCode.isNotEmpty && p.code.contains(posCode);
-            return matchName || matchBarcode || matchPosCode;
+            return p.name.toLowerCase().contains(query.toLowerCase()) ||
+                p.barcode.contains(query) ||
+                p.code.contains(query);
           }).toList();
       hasSearched = true;
     });
+
+    // 검색 결과 확인 메시지
+    if (searchResults.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('검색 결과가 없습니다.'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
   }
 
   @override
@@ -1087,44 +1107,77 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                   ),
                 ],
               ),
+              const SizedBox(height: 8),
+
+              // 로드 상태 표시
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color:
+                      widget.isProductsLoaded
+                          ? Colors.green.shade50
+                          : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color:
+                        widget.isProductsLoaded
+                            ? Colors.green.shade200
+                            : Colors.orange.shade200,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      widget.isProductsLoaded ? Icons.check_circle : Icons.info,
+                      size: 16,
+                      color:
+                          widget.isProductsLoaded
+                              ? Colors.green.shade700
+                              : Colors.orange.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.loadStatus,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color:
+                              widget.isProductsLoaded
+                                  ? Colors.green.shade700
+                                  : Colors.orange.shade700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 16),
 
-              // 검색 입력 필드들
+              // 통합 검색 입력 필드
               TextField(
-                controller: nameController,
+                controller: searchController,
                 decoration: InputDecoration(
-                  labelText: '제품명',
-                  hintText: '예: 매드독 패딩',
+                  labelText: '제품명, 바코드, 또는 POS코드',
+                  hintText: '예: 매드독, 8820250923178, WP17462',
                   border: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  prefixIcon: const Icon(Icons.shopping_bag),
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon:
+                      searchController.text.isNotEmpty
+                          ? IconButton(
+                            icon: const Icon(Icons.clear),
+                            onPressed: () {
+                              searchController.clear();
+                              setState(() {
+                                searchResults = [];
+                                hasSearched = false;
+                              });
+                            },
+                          )
+                          : null,
                 ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: barcodeController,
-                decoration: InputDecoration(
-                  labelText: '바코드',
-                  hintText: '예: 8820250923178',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  prefixIcon: const Icon(Icons.qr_code),
-                ),
-                keyboardType: TextInputType.number,
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: posCodeController,
-                decoration: InputDecoration(
-                  labelText: 'POS 상품코드',
-                  hintText: '예: WP17462',
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  prefixIcon: const Icon(Icons.tag),
-                ),
+                onSubmitted: (_) => searchProduct(),
               ),
               const SizedBox(height: 16),
 
@@ -1147,19 +1200,43 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
               ),
               const SizedBox(height: 16),
 
-              // 검색 결과
+              // 검색 결과 헤더
               if (hasSearched) ...[
-                Text(
-                  '검색 결과: ${searchResults.length}개',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '검색 결과',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade700,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.pink.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        '${searchResults.length}개',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.pink,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
                 const Divider(height: 16),
               ],
 
+              // 검색 결과 리스트
               Expanded(
                 child:
                     !hasSearched
@@ -1223,6 +1300,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
 
                             return Card(
                               margin: const EdgeInsets.only(bottom: 8),
+                              elevation: 2,
                               child: ListTile(
                                 title: Text(
                                   product.name,
@@ -1249,7 +1327,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                                     ),
                                     if (product.code.isNotEmpty)
                                       Text(
-                                        '코드: ${product.code}',
+                                        '코드: ${product.code} | 바코드: ${product.barcode}',
                                         style: const TextStyle(
                                           fontSize: 10,
                                           color: Colors.grey,
@@ -1257,7 +1335,10 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
                                       ),
                                   ],
                                 ),
-                                trailing: const Icon(Icons.chevron_right),
+                                trailing: const Icon(
+                                  Icons.arrow_forward_ios,
+                                  size: 16,
+                                ),
                                 onTap: () => widget.onProductSelected(product),
                               ),
                             );
@@ -1273,9 +1354,7 @@ class _ProductSearchSheetState extends State<ProductSearchSheet> {
 
   @override
   void dispose() {
-    nameController.dispose();
-    barcodeController.dispose();
-    posCodeController.dispose();
+    searchController.dispose();
     super.dispose();
   }
 }
