@@ -380,6 +380,8 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           calculatedHeadRate =
               ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
               100;
+
+          headRateController.text = calculatedHeadRate.toStringAsFixed(1);
         }
 
         if (storeRate > 0) {
@@ -402,16 +404,21 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
           calculatedStoreRate =
               ((calculatedSelling - calculatedSupply) / calculatedSelling) *
               100;
+
+          storeRateController.text = calculatedStoreRate.toStringAsFixed(1);
         } else if (supply > 0) {
           calculatedSupply = supply;
           calculatedStoreRate =
               ((calculatedSelling - calculatedSupply) / calculatedSelling) *
               100;
 
+          storeRateController.text = calculatedStoreRate.toStringAsFixed(1);
+
           if (vatIncludedProposal > 0) {
             calculatedHeadRate =
                 ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
                 100;
+            headRateController.text = calculatedHeadRate.toStringAsFixed(1);
           }
         } else if (storeRate > 0) {
           calculatedSupply = roundTo100(
@@ -422,6 +429,7 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             calculatedHeadRate =
                 ((calculatedSupply - vatIncludedProposal) / calculatedSupply) *
                 100;
+            headRateController.text = calculatedHeadRate.toStringAsFixed(1);
           }
         }
       }
@@ -436,21 +444,18 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             ((calculatedSelling - calculatedSupply) / calculatedSelling) * 100;
       }
 
-      // 매장이익금 = 판매가 - 공급가
       if (calculatedSelling > 0 && calculatedSupply > 0) {
         storeProfit = calculatedSelling - calculatedSupply;
       } else {
         storeProfit = 0;
       }
 
-      // 최종매장이익금 = 매장이익금 - 택배비
       if (storeProfit > 0) {
         finalStoreProfit = storeProfit - shippingCostPerUnit;
       } else {
         finalStoreProfit = 0;
       }
 
-      // 최종매장이익률 = 최종매장이익금 / 판매가 × 100
       if (calculatedSelling > 0 && finalStoreProfit > 0) {
         finalStoreProfitRate = (finalStoreProfit / calculatedSelling) * 100;
       } else {
@@ -640,7 +645,6 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
   Widget _buildComparisonCard() {
     if (selectedProduct == null) return const SizedBox.shrink();
 
-    // 기준가 마진율 계산
     double baseHeadRate =
         selectedProduct!.supplyPrice > 0
             ? ((selectedProduct!.supplyPrice - selectedProduct!.purchasePrice) /
