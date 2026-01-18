@@ -432,6 +432,161 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
     );
   }
 
+  void loadFromHistory(CalculationHistory history) {
+    setState(() {
+      proposalController.text = history.proposal.toStringAsFixed(0);
+      isVatIncluded = history.isVatIncluded;
+      headMarginRateController.text = history.headRate.toStringAsFixed(1);
+      supplyPriceController.text = history.supply.toStringAsFixed(0);
+      storeMarginRateController.text = history.storeRate.toStringAsFixed(1);
+      sellingPriceController.text = history.selling.toStringAsFixed(0);
+      shippingController.text = history.shipping.toStringAsFixed(0);
+      boxQtyController.text = history.qty.toStringAsFixed(0);
+    });
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          '${history.memo.isNotEmpty ? history.memo : "저장된 데이터"}를 불러왔습니다.',
+        ),
+      ),
+    );
+  }
+
+  void deleteHistory(CalculationHistory history) {
+    setState(() {
+      historyList.remove(history);
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('삭제되었습니다.')));
+  }
+
+  void showHistoryList() {
+    if (historyList.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('저장된 히스토리가 없습니다.')));
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder:
+          (context) => DraggableScrollableSheet(
+            initialChildSize: 0.7,
+            maxChildSize: 0.9,
+            minChildSize: 0.5,
+            expand: false,
+            builder:
+                (context, scrollController) => Column(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text(
+                            '저장된 히스토리',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(context),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    Expanded(
+                      child: ListView.builder(
+                        controller: scrollController,
+                        itemCount: historyList.length,
+                        itemBuilder: (context, index) {
+                          final history =
+                              historyList[historyList.length - 1 - index];
+                          return Card(
+                            margin: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            child: ListTile(
+                              title: Text(
+                                history.memo.isNotEmpty
+                                    ? history.memo
+                                    : '견적 ${historyList.length - index}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '제안: ${history.proposal.toStringAsFixed(0)}원 | '
+                                    '공급: ${history.supply.toStringAsFixed(0)}원 | '
+                                    '판매: ${history.selling.toStringAsFixed(0)}원',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                  Text(
+                                    '매장이익률: ${history.finalRate.toStringAsFixed(1)}% | '
+                                    '이익금: ${history.finalProfit.toStringAsFixed(0)}원',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green,
+                                    ),
+                                  ),
+                                  Text(
+                                    '저장: ${_formatDateTime(history.timestamp)}',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.grey[600],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(
+                                      Icons.delete_outline,
+                                      color: Colors.red,
+                                    ),
+                                    onPressed: () {
+                                      deleteHistory(history);
+                                      if (historyList.isEmpty) {
+                                        Navigator.pop(context);
+                                      }
+                                    },
+                                  ),
+                                  const Icon(Icons.chevron_right),
+                                ],
+                              ),
+                              onTap: () => loadFromHistory(history),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+          ),
+    );
+  }
+
+  String _formatDateTime(DateTime dt) {
+    return '${dt.month}/${dt.day} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     double proposal = double.tryParse(proposalController.text) ?? 0;
@@ -472,6 +627,40 @@ class _AnyPriceScreenState extends State<AnyPriceScreen> {
             icon: const Icon(Icons.upload_file),
             onPressed: uploadCSV,
             tooltip: 'CSV 업로드',
+          ),
+          IconButton(
+            icon: Stack(
+              children: [
+                const Icon(Icons.history),
+                if (historyList.isNotEmpty)
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 16,
+                        minHeight: 16,
+                      ),
+                      child: Text(
+                        '${historyList.length}',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            onPressed: showHistoryList,
+            tooltip: '히스토리',
           ),
         ],
       ),
