@@ -1,6 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- 📷 카메라 권한 (바코드 스캔용) -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    
+    <!-- 📁 파일 접근 권한 (엑셀 내보내기용) -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    
+    <!-- 🌐 인터넷 권한 (공유 기능용) -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    
     <application
-        android:label="barcode_scanner_app"
+        android:label="다계산해줄지니어스"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -40,6 +52,11 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 🔗 공유 기능을 위한 쿼리 추가 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
         </intent>
     </queries>
 </manifest>
